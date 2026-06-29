@@ -5,7 +5,6 @@
   <title>Lumin Web</title>
 
   <style>
-    /* ---------- Base Layout ---------- */
     body {
       margin: 0;
       font-family: system-ui, sans-serif;
@@ -21,6 +20,10 @@
       display: flex;
       flex-direction: column;
       background: #020617;
+      width: 480px;
+      max-width: 100%;
+      border-radius: 12px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
     }
 
     .messages {
@@ -33,7 +36,6 @@
       background: #0b1120;
     }
 
-    /* ---------- Message Bubbles ---------- */
     .msg {
       max-width: 80%;
       padding: 10px 14px;
@@ -94,22 +96,6 @@
       background: #1f2937;
       cursor: default;
     }
-
-    /* ---------- Browser Mode (wide) ---------- */
-    body.browser .chat {
-      width: 100%;
-      height: 100%;
-      border-radius: 0;
-      box-shadow: none;
-    }
-
-    /* ---------- Phone Mode (thin) ---------- */
-    body.phone .chat {
-      width: 480px;
-      max-width: 100%;
-      border-radius: 12px;
-      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
-    }
   </style>
 </head>
 
@@ -120,14 +106,20 @@
 
     <div class="input-row">
       <input id="input" type="text" placeholder="Type a message..." />
-      <button id="send">Send</button>
+      <button id="send" disabled>Send</button>
     </div>
   </div>
 
   <script>
-    /* Choose your mode */
-    const uiMode = "browser";   // or "phone"
-    document.body.classList.add(uiMode);
+    function uuid() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+
+    const sessionId = uuid();
 
     const messagesEl = document.getElementById("messages");
     const statusEl = document.getElementById("status");
@@ -135,7 +127,6 @@
     const sendBtn = document.getElementById("send");
 
     let ws = null;
-    let currentAssistantMsg = null;
 
     function appendMessage(text, role) {
       const bubble = document.createElement("div");
@@ -143,57 +134,51 @@
       bubble.textContent = text;
       messagesEl.appendChild(bubble);
       messagesEl.scrollTop = messagesEl.scrollHeight;
-      return bubble;
     }
 
     function connect() {
-      ws = new WebSocket("ws://" + window.location.host + "/ws/chat");
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${protocol}//${window.location.host}/ws/chat`;
 
-      ws.onopen = () => statusEl.textContent = "Connected";
-      ws.onclose = () => statusEl.textContent = "Disconnected";
-      ws.onerror = () => statusEl.textContent = "Error";
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        statusEl.textContent = "Connected";
+        sendBtn.disabled = false;
+      };
+
+      ws.onclose = () => {
+        statusEl.textContent = "Disconnected";
+        sendBtn.disabled = true;
+      };
+
+      ws.onerror = () => {
+        statusEl.textContent = "Error";
+        sendBtn.disabled = true;
+      };
 
       ws.onmessage = (event) => {
         let data;
 
         try { data = JSON.parse(event.data); }
-        catch { data = event.data; }
-
-        if (typeof data === "string") {
-          currentAssistantMsg = appendMessage(data, "assistant");
-          currentAssistantMsg = null;
+        catch { 
+          appendMessage(event.data, "assistant");
           return;
         }
 
         if (data.type === "status") {
-          statusEl.textContent = data.state === "thinking"
-            ? "Lumin is thinking…"
-            : "";
-          return;
-        }
-
-        if (data.type === "token") {
-          if (!currentAssistantMsg)
-            currentAssistantMsg = appendMessage(data.text, "assistant");
-          else
-            currentAssistantMsg.textContent += data.text;
-
-          messagesEl.scrollTop = messagesEl.scrollHeight;
+          statusEl.textContent = "Lumin is thinking…";
           return;
         }
 
         if (data.type === "final") {
-          if (!currentAssistantMsg)
-            currentAssistantMsg = appendMessage(data.text, "assistant");
-          else
-            currentAssistantMsg.textContent = data.text;
-
-          currentAssistantMsg = null;
+          statusEl.textContent = "";
+          appendMessage(data.text, "assistant");
           return;
         }
 
-        if (data.type === "error") {
-          appendMessage("Error: " + data.message, "assistant");
+        if (typeof data === "string") {
+          appendMessage(data, "assistant");
         }
       };
     }
@@ -205,7 +190,12 @@
       if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
 
       appendMessage(text, "user");
-      ws.send(JSON.stringify({ text }));
+
+      ws.send(JSON.stringify({
+        session: sessionId,
+        text: text
+      }));
+
       inputEl.value = "";
     }
 

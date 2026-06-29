@@ -1,34 +1,27 @@
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
-import uuid
 import json
 import os
 
-# Load config.json
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "../../config.json")
-with open(CONFIG_PATH, "r") as f:
-    config = json.load(f)
-
-# Import your LLM pipeline
 from core.ollama_client import OllamaChat
 
 app = FastAPI()
 
-# Serve static files (HTML/JS/CSS)
 app.mount("/static", StaticFiles(directory="ui/web/static"), name="static")
 
-# Initialize your LLM once at startup
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "../../config.json")
+with open(CONFIG_PATH, "r") as f:
+    config = json.load(f)
+
 llm = OllamaChat(config)
 
-# In-memory conversation store (session_id → list of messages)
 conversations = {}
 
-# ⭐ Warm the model on startup
 @app.on_event("startup")
 async def warm_model():
     print("Warming LLM model...")
     try:
-        llm.run("warmup")
+        llm.run([{"role": "user", "content": "warmup"}])
         print("LLM ready.")
     except Exception as e:
         print("Warmup failed:", e)
@@ -37,43 +30,49 @@ async def warm_model():
 @app.websocket("/ws/chat")
 async def websocket_chat(ws: WebSocket):
     await ws.accept()
+    print("WebSocket connected")
 
     while True:
-        raw = await ws.receive_text()
+        try:
+            raw = await ws.receive_text()
+        except Exception as e:
+            print("WebSocket closed:", e)
+            break
 
-        # Try to parse JSON from the UI
         try:
             data = json.loads(raw)
         except:
+            print("Invalid JSON:", raw)
             continue
 
-        # Must include session ID
         session_id = data.get("session")
-        if not session_id:
-            # Ignore malformed messages
+        user_text = data.get("text")
+
+        if not session_id or not user_text:
+            print("Missing session or text")
             continue
 
-        # Must include user text
-        if "text" not in data:
-            continue
-
-        user_text = data["text"]
-
-        # Create session if new
         conversations.setdefault(session_id, [])
 
-        # Add user message to session history
-        conversations[session_id].append({"role": "user", "text": user_text})
+        conversations[session_id].append({
+            "role": "user",
+            "content": user_text
+        })
 
-        # Send "thinking" status to UI
         await ws.send_json({"type": "status", "state": "thinking"})
 
-        # ⭐ Pass full conversation history to the LLM
         history = conversations[session_id]
-        response_text = llm.run(history)
 
-        # Add assistant reply to session history
-        conversations[session_id].append({"role": "assistant", "text": response_text})
+        try:
+            response_text = llm.run(history)
+        except Exception as e:
+            print("LLM error:", e)
+            await ws.send_json({"type": "error", "message": str(e)})
+            continue
 
-        # Send final structured message
+        conversations[session_id].append({
+            "role": "assistant",
+            "content": response_text
+        })
+
         await ws.send_json({"type": "final", "text": response_text})
