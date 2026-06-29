@@ -1,5 +1,4 @@
 from fastapi import FastAPI, WebSocket
-from fastapi.requests import Request
 from fastapi.staticfiles import StaticFiles
 import uuid
 import json
@@ -21,24 +20,60 @@ app.mount("/static", StaticFiles(directory="ui/web/static"), name="static")
 # Initialize your LLM once at startup
 llm = OllamaChat(config)
 
-# Simple in-memory conversation store
+# In-memory conversation store (session_id → list of messages)
 conversations = {}
+
+# ⭐ Warm the model on startup
+@app.on_event("startup")
+async def warm_model():
+    print("Warming LLM model...")
+    try:
+        llm.run("warmup")
+        print("LLM ready.")
+    except Exception as e:
+        print("Warmup failed:", e)
 
 
 @app.websocket("/ws/chat")
 async def websocket_chat(ws: WebSocket):
     await ws.accept()
 
-    session_id = str(uuid.uuid4())
-    conversations[session_id] = []
-
     while True:
-        message = await ws.receive_text()
-        conversations[session_id].append({"role": "user", "text": message})
+        raw = await ws.receive_text()
 
-        # Call your actual LLM
-        response_text = llm.run(message)
+        # Try to parse JSON from the UI
+        try:
+            data = json.loads(raw)
+        except:
+            continue
 
+        # Must include session ID
+        session_id = data.get("session")
+        if not session_id:
+            # Ignore malformed messages
+            continue
+
+        # Must include user text
+        if "text" not in data:
+            continue
+
+        user_text = data["text"]
+
+        # Create session if new
+        conversations.setdefault(session_id, [])
+
+        # Add user message to session history
+        conversations[session_id].append({"role": "user", "text": user_text})
+
+        # Send "thinking" status to UI
+        await ws.send_json({"type": "status", "state": "thinking"})
+
+        # ⭐ Pass full conversation history to the LLM
+        history = conversations[session_id]
+        response_text = llm.run(history)
+
+        # Add assistant reply to session history
         conversations[session_id].append({"role": "assistant", "text": response_text})
 
-        await ws.send_text(response_text)
+        # Send final structured message
+        await ws.send_json({"type": "final", "text": response_text})
