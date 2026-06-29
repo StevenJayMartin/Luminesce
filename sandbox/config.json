@@ -1,0 +1,18 @@
+{
+  "ollama_url": "http://192.168.5.241:11434",
+  "model": "llama3.2:latest",
+  "mic_device": 1,
+  "vosk_model_path": "C:\\HOME_Scripts\\OllamaLumin\\lumin\\models\\vosk\\vosk-model-small-en-us-0.15",
+  "silence_threshold": 2000,
+  "silence_duration": 1.5,
+  "listen_mode": "push_to_talk",
+  "tts_enabled": true,
+  "stream_to_terminal": true,
+  "wake_words": ["hey lumin", "lumin"],
+  "stop_words": ["stop", "cancel"],
+  "clear_words": ["clear that", "reset"],
+  "listen_again_words": ["listen again", "start over"],
+  "enable_tools": true,
+  "tools": ["web_search"],
+  "search_engine": "duckduckgo"
+}

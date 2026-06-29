@@ -1,0 +1,25 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# Piper
+piper/
+
+# models
+lumin/models/*
+!lumin/models/README.md
+
+# Logs
+*.log
+lumin/logs/*.log*
+
+# VSCode
+.vscode/
+
+# Windows junk
+Thumbs.db

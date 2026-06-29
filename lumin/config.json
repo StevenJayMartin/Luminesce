@@ -1,0 +1,45 @@
+{
+  "ollama": {
+    "url": "http://192.168.1.184:11434",
+    "model": "llama3.2:latest"
+  },
+
+  "voice": {
+    "mic_device": 1,
+    "vosk_model_path": "C:\\HOME_Scripts\\Luminesce\\lumin\\models\\vosk\\vosk-model-small-en-us-0.15",
+    "silence_threshold": 2000,
+    "silence_duration": 1.5,
+    "listen_mode": "push_to_talk",
+    "tts_enabled": true,
+    "wake_words": ["hey lumin", "lumin"],
+    "stop_words": ["stop", "cancel"],
+    "clear_words": ["clear that", "reset"],
+    "listen_again_words": ["listen again", "start over"]
+  },
+
+  "tts": {
+    "enabled": true,
+    "engine": "piper",
+    "piper_path": "C:/HOME_Scripts/Luminesce/piper/piper.exe",
+    "model_path": "models/en_US-ryan-low.onnx",
+    "voice": "en_US-ryan-low"
+  },
+
+  "tools": {
+    "enabled": false,
+    "list": ["web_search"],
+    "search_engine": "duckduckgo"
+  },
+
+  "ui": {
+    "stream_to_terminal": true,
+    "theme": "dark",
+    "animations": true
+  },
+
+  "api": {
+    "enabled": false,
+    "host": "0.0.0.0",
+    "port": 8000
+  }
+}

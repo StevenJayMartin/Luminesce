@@ -1,0 +1,132 @@
+✅ 1. Make sure your folder structure is correct
+Inside your project folder, you should have:
+
+^----
+lumin/
+│
+├── main.py
+├── stt.py
+├── tts.py
+├── ollama_client.py
+├── ui_app.py
+│
+├── config.json
+└── models/
+    └── vosk/
+        └── (vosk model files)
+If VS Code is open, make sure the workspace root is the folder containing lumin/, not the lumin/ folder itself.
+
+✅ 2. Open VS Code terminal
+Inside VS Code:
+
+^----
+Ctrl+Shift+`
+Make sure the terminal is using the correct Python environment.
+
+If you’re using a venv:
+
+^----
+source venv/bin/activate
+or on Windows:
+
+^----
+venv\Scripts\activate
+✅ 3. Install dependencies (if you haven’t yet)
+In the VS Code terminal:
+
+^----
+pip install sounddevice scipy vosk pyttsx3 textual requests numpy
+If you get a sounddevice error on Windows, run:
+
+^----
+
+✅ 4. Verify your microphone index
+In VS Code terminal:
+
+python
+python - <<EOF
+import sounddevice as sd
+print(sd.query_devices())
+EOF
+Find your mic and note the index number.
+
+Update config.json:
+
+json
+"mic_device": 1
+(or whatever index your mic is)
+
+✅ 5. Verify your Vosk model path
+Make sure:
+
+^----
+models/vosk/
+contains:
+
+^----
+am/
+conf/
+graph/
+ivector/
+rescore/
+If you see a folder like vosk-model-small-en-us-0.15, rename it to just vosk.
+
+✅ 6. Verify Ollama is running
+In a separate terminal:
+
+^----
+ollama serve
+Then test:
+
+^----
+curl http://localhost:11434/api/tags
+You should see your installed models.
+
+✅ 7. Run Lumin inside VS Code
+In the VS Code terminal:
+
+^----
+python lumin/main.py
+If you want always‑listen mode:
+
+^----
+python lumin/main.py --listen-mode always
+If you want to override the model:
+
+^----
+python lumin/main.py --model llama3.2
+🎤 8. Test push‑to‑talk
+Inside the Textual UI:
+
+Press:
+
+^----
+Ctrl+M
+You should see:
+
+Bulb → 🟦 Listening
+
+Filament meter moving
+
+After silence → 🟪 Thinking
+
+Then → 🟨 Speaking
+
+If you hear TTS, everything is working.
+
+🎙️ 9. Test wake‑word (always‑listen mode)
+Run:
+
+^----
+python lumin/main.py --listen-mode always
+Say:
+
+“Hey Lumin”
+
+You should see:
+
+Bulb → 🟨 Speaking
+
+TTS: “I’m listening.”
+
+Then STT begins
