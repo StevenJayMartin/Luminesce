@@ -16,13 +16,15 @@ class OllamaChat:
 
         self.base_url = ollama_cfg["url"]
         self.model = ollama_cfg["model"]
+        self.mode = ollama_cfg.get("mode", "chat")   # "chat" or "generate"
 
-        log.debug(f"OllamaChat initialized: url={self.base_url}, model={self.model}")
+        log.debug(f"OllamaChat initialized: url={self.base_url}, model={self.model}, mode={self.mode}")
 
 
-    def stream_chat(self, messages, on_token=None):
-        log.debug(f"OllamaChat.stream_chat called, messages={messages}, on_token={on_token}")
-
+    # -----------------------------------------------------
+    # STREAM CHAT MODE (TUI)
+    # -----------------------------------------------------
+    def _stream_chat(self, messages, on_token):
         payload = {
             "model": self.model,
             "messages": messages,
@@ -30,14 +32,14 @@ class OllamaChat:
         }
 
         url = f"{self.base_url}/api/chat"
-        log.debug(f"OllamaChat: Streaming to {url} with payload={payload}")
+        log.debug(f"OllamaChat: CHAT mode → {url}, payload={payload}")
 
         with requests.post(url, json=payload, stream=True) as resp:
-            log.debug(f"OllamaChat: response status={resp.status_code}")
+            log.debug(f"OllamaChat: CHAT response status={resp.status_code}")
             resp.raise_for_status()
 
             for line in resp.iter_lines(decode_unicode=True):
-                log.debug(f"OllamaChat: raw line='{line}'")
+                log.debug(f"OllamaChat: CHAT raw line='{line}'")
 
                 if not line:
                     continue
@@ -45,17 +47,69 @@ class OllamaChat:
                 try:
                     data = json.loads(line)
                 except Exception as e:
-                    log.error(f"OllamaChat: JSON parse error: {e}, line='{line}'")
+                    log.error(f"OllamaChat: CHAT JSON parse error: {e}, line='{line}'")
                     continue
 
-                # Chat API format
                 if "message" in data and "content" in data["message"]:
                     token = data["message"]["content"]
-                    log.debug(f"OllamaChat: token='{token}'")
-
-                    if on_token:
-                        on_token(token)
+                    log.debug(f"OllamaChat: CHAT token='{token}'")
+                    on_token(token)
 
                 if data.get("done"):
-                    log.debug("OllamaChat: done flag received")
+                    log.debug("OllamaChat: CHAT done flag received")
                     break
+
+
+    # -----------------------------------------------------
+    # STREAM GENERATE MODE (WEB UI)
+    # -----------------------------------------------------
+    def _stream_generate(self, messages, on_token):
+        # Convert messages → transcript
+        transcript = ""
+        for msg in messages:
+            role = msg["role"]
+            content = msg["content"]
+            transcript += f"{'User' if role == 'user' else 'Assistant'}: {content}\n"
+        transcript += "Assistant:"
+
+        payload = {
+            "model": self.model,
+            "prompt": transcript,
+            "stream": True
+        }
+
+        url = f"{self.base_url}/api/generate"
+        log.debug(f"OllamaChat: GENERATE mode → {url}, payload={payload}")
+
+        with requests.post(url, json=payload, stream=True) as resp:
+            log.debug(f"OllamaChat: GENERATE response status={resp.status_code}")
+            resp.raise_for_status()
+
+            for line in resp.iter_lines(decode_unicode=True):
+                log.debug(f"OllamaChat: GENERATE raw line='{line}'")
+
+                if not line:
+                    continue
+
+                try:
+                    data = json.loads(line)
+                except Exception as e:
+                    log.error(f"OllamaChat: GENERATE JSON parse error: {e}, line='{line}'")
+                    continue
+
+                token = data.get("response", "")
+                if token:
+                    log.debug(f"OllamaChat: GENERATE token='{token}'")
+                    on_token(token)
+
+
+    # -----------------------------------------------------
+    # PUBLIC STREAM METHOD
+    # -----------------------------------------------------
+    def stream_chat(self, messages, on_token):
+        log.debug(f"OllamaChat.stream_chat called, mode={self.mode}, messages={messages}")
+
+        if self.mode == "chat":
+            self._stream_chat(messages, on_token)
+        else:
+            self._stream_generate(messages, on_token)

@@ -1,7 +1,8 @@
 {
   "ollama": {
     "url": "http://192.168.1.184:11434",
-    "model": "llama3.2:latest"
+    "model": "llama3.2:latest",
+    "mode": "chat"
   },
 
   "voice": {
