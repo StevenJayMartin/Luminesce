@@ -6,7 +6,8 @@ import argparse
 import logging
 import os
 
-from ui.tui.ui_app import LuminApp
+from lumin.ui.tui.ui_app import LuminApp
+
 
 # -----------------------------
 # LOGGING SETUP

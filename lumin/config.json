@@ -34,7 +34,10 @@
   "ui": {
     "stream_to_terminal": true,
     "theme": "dark",
-    "animations": true
+    "animations": true,
+
+    "mode": "auto",      
+    "width": "auto"
   },
 
   "api": {

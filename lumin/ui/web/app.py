@@ -1,78 +1,148 @@
-from fastapi import FastAPI, WebSocket
-from fastapi.staticfiles import StaticFiles
-import json
 import os
+import json
+import uuid
+import requests
 
-from core.ollama_client import OllamaChat
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
+# ------------------------------------------------------------
+# PATHS
+# ------------------------------------------------------------
 
-app.mount("/static", StaticFiles(directory="ui/web/static"), name="static")
+# /home/sjm/Luminesce/lumin/ui/web
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "../../config.json")
+# /home/sjm/Luminesce/lumin/ui/web/index.html
+INDEX_PATH = os.path.join(BASE_DIR, "index.html")
+
+# /home/sjm/Luminesce/lumin/ui/web/static
+STATIC_PATH = os.path.join(BASE_DIR, "static")
+
+# /home/sjm/Luminesce/lumin/config.json
+#- CONFIG_PATH = os.path.join(os.path.dirname(BASE_DIR), "config.json")
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), "config.json")
+
+
+
+# ------------------------------------------------------------
+# LOAD CONFIG.JSON
+# ------------------------------------------------------------
 with open(CONFIG_PATH, "r") as f:
     config = json.load(f)
 
-llm = OllamaChat(config)
 
+# ------------------------------------------------------------
+# OPTIONAL: WARMUP (SAFE IMPORT)
+# ------------------------------------------------------------
+try:
+    from lumin.main import warm_llm
+    warm_llm()
+    print("LLM warmup complete.")
+except Exception as e:
+    print("Warmup skipped or failed:", e)
+
+
+# ------------------------------------------------------------
+# FASTAPI APP
+# ------------------------------------------------------------
+app = FastAPI()
+
+# Allow browser access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount static directory
+if os.path.isdir(STATIC_PATH):
+    app.mount("/static", StaticFiles(directory=STATIC_PATH), name="static")
+
+
+# ------------------------------------------------------------
+# ROUTES
+# ------------------------------------------------------------
+
+@app.get("/")
+def root():
+    """
+    Serve the main Web UI page.
+    """
+    return FileResponse(INDEX_PATH)
+
+
+@app.get("/config")
+def get_config():
+    """
+    Expose config.json to the Web UI.
+    """
+    return {
+        "llm": {
+            "url": config["ollama"]["url"],
+            "model": config["ollama"]["model"]
+        },
+        "ui": {
+            "mode": config["ui"].get("mode", "auto"),
+            "width": config["ui"].get("width", "auto"),
+            "theme": config["ui"].get("theme", "dark"),
+            "animations": config["ui"].get("animations", True)
+        }
+    }
+
+
+# ------------------------------------------------------------
+# WEBSOCKET CHAT
+# ------------------------------------------------------------
 conversations = {}
-
-@app.on_event("startup")
-async def warm_model():
-    print("Warming LLM model...")
-    try:
-        llm.run([{"role": "user", "content": "warmup"}])
-        print("LLM ready.")
-    except Exception as e:
-        print("Warmup failed:", e)
-
 
 @app.websocket("/ws/chat")
 async def websocket_chat(ws: WebSocket):
     await ws.accept()
-    print("WebSocket connected")
 
-    while True:
-        try:
-            raw = await ws.receive_text()
-        except Exception as e:
-            print("WebSocket closed:", e)
-            break
+    try:
+        while True:
+            data = await ws.receive_json()
+            session_id = data.get("session")
+            text = data.get("text", "").strip()
 
-        try:
-            data = json.loads(raw)
-        except:
-            print("Invalid JSON:", raw)
-            continue
+            if not session_id:
+                session_id = str(uuid.uuid4())
 
-        session_id = data.get("session")
-        user_text = data.get("text")
+            if session_id not in conversations:
+                conversations[session_id] = []
 
-        if not session_id or not user_text:
-            print("Missing session or text")
-            continue
+            # Add user message
+            conversations[session_id].append({"role": "user", "content": text})
 
-        conversations.setdefault(session_id, [])
+            # Build transcript
+            transcript = ""
+            for msg in conversations[session_id]:
+                transcript += f"{msg['role'].capitalize()}: {msg['content']}\n"
+            transcript += "Assistant:"
 
-        conversations[session_id].append({
-            "role": "user",
-            "content": user_text
-        })
+            # Call Ollama
+            response = requests.post(
+                f"{config['ollama']['url']}/api/generate",
+                json={
+                    "model": config["ollama"]["model"],
+                    "prompt": transcript,
+                    "stream": False
+                }
+            ).json()
+            reply = response.get("response", "").strip()
 
-        await ws.send_json({"type": "status", "state": "thinking"})
+            # Add assistant reply
+            conversations[session_id].append({"role": "assistant", "content": reply})
 
-        history = conversations[session_id]
+            # Send back to browser
+            await ws.send_json({
+                "session": session_id,
+                "reply": reply
+            })
 
-        try:
-            response_text = llm.run(history)
-        except Exception as e:
-            print("LLM error:", e)
-            await ws.send_json({"type": "error", "message": str(e)})
-            continue
-
-        conversations[session_id].append({
-            "role": "assistant",
-            "content": response_text
-        })
-
-        await ws.send_json({"type": "final", "text": response_text})
+    except WebSocketDisconnect:
+        print("WebSocket disconnected")
