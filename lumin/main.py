@@ -167,14 +167,14 @@ def main():
         engine = tts_cfg.get("engine", "piper")
 
         if engine == "piper":
-            from voice.tts_piper import TTS
+            from lumin.voice.tts_piper import TTS
             tts_engine = TTS(
                 piper_path=tts_cfg["piper_path"],
                 model_path=tts_cfg["model_path"]
             )
 
         elif engine == "pyttsx3":
-            from voice.tts_pyttsx3 import TTS
+            from lumin.voice.tts_pyttsx3 import TTS
             tts_engine = TTS()
 
         else:
