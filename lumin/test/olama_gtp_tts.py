@@ -31,7 +31,7 @@ class OllamaChatApp(App):
         yield Header()
         with Container():
             with VerticalScroll():
-                self.chat_area = TextArea(read_only=True)
+                self.chat_area = TextArea()
                 yield self.chat_area
             self.input_box = Input(placeholder="Type your message and press Enter...")
             yield self.input_box

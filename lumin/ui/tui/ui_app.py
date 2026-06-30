@@ -12,7 +12,6 @@ from lumin.voice.stt import SpeechRecognizer
 from lumin.voice.tts import Speaker
 from lumin.core.ollama_client import OllamaChat
 
-
 log = logging.getLogger("lumin-ui")
 
 
@@ -30,55 +29,39 @@ class LuminApp(App):
         super().__init__()
         self.config = config
 
-        # Engines
         self.tts = tts
-
         self.llm = OllamaChat(config)
         self.stt = SpeechRecognizer(
             config,
             volume_callback=self._volume_callback_safe
         )
 
-        # UI widgets
         self.chat_area = None
         self.input_box = None
 
-        # State
         self.listening = False
         self.always_listen = (config.get("listen_mode") == "always")
-
-        # FIXED: correct TTS enabled flag
         self.tts_enabled = config["tts"].get("enabled", True)
-
         self.stream_to_terminal = config.get("stream_to_terminal", True)
 
-        # Chat history
         self.chat_history = []
-
-        # Thread control
         self._stop_flag = False
 
-    # -----------------------------------------------------
-    # CLEAN APPEND
-    # -----------------------------------------------------
     def append_chat(self, text: str):
         end = len(self.chat_area.text)
         self.chat_area.cursor_position = end
         self.chat_area.insert(text)
         self.chat_area.scroll_end(animate=False)
 
-    # -----------------------------------------------------
-    # UI COMPOSITION
-    # -----------------------------------------------------
     def compose(self) -> ComposeResult:
         yield Header()
 
         with Container():
             with VerticalScroll():
-                self.chat_area = TextArea(read_only=True)
+                self.chat_area = TextArea()
+                self.chat_area.disabled = True
                 yield self.chat_area
 
-            # Push to Talk button
             yield Button("Push to Talk", id="ptt-button")
 
             self.input_box = Input(placeholder="Type your message and press Enter...")
@@ -86,37 +69,22 @@ class LuminApp(App):
 
         yield Footer()
 
-    # -----------------------------------------------------
-    # MOUNT
-    # -----------------------------------------------------
     async def on_mount(self) -> None:
         self.append_chat("Connected to Lumin\n")
 
         if self.always_listen:
             threading.Thread(target=self._always_listen_loop, daemon=True).start()
 
-    # -----------------------------------------------------
-    # BUTTON HANDLER
-    # -----------------------------------------------------
     async def on_button_pressed(self, event: Button.Pressed):
         if event.button.id == "ptt-button":
             self._start_stt()
 
-    # -----------------------------------------------------
-    # START STT CYCLE
-    # -----------------------------------------------------
     def _start_stt(self):
         threading.Thread(target=self._run_stt_cycle, daemon=True).start()
 
-    # -----------------------------------------------------
-    # SAFE VOLUME CALLBACK
-    # -----------------------------------------------------
     def _volume_callback_safe(self, level: float):
         pass
 
-    # -----------------------------------------------------
-    # INPUT SUBMITTED
-    # -----------------------------------------------------
     async def on_input_submitted(self, message: Input.Submitted) -> None:
         user_text = message.value.strip()
         if not user_text:
@@ -131,16 +99,18 @@ class LuminApp(App):
         except Exception as e:
             self.append_chat(f"Error: {e}\n")
 
-    # -----------------------------------------------------
-    # STREAM LLM RESPONSE (SAFE FALLBACK)
-    # -----------------------------------------------------
     async def _stream_llm(self, text: str):
+        log.debug(f"TUI: _stream_llm called with text='{text}'")
+
         messages = [{"role": "user", "content": text}]
+        log.debug(f"TUI: messages={messages}")
+
         response_parts = []
 
         self.append_chat("Lumin: ")
 
         def on_token(token: str):
+            log.debug(f"TUI: on_token received: '{token}'")
             response_parts.append(token)
             self.append_chat(token)
 
@@ -149,22 +119,24 @@ class LuminApp(App):
                 sys.__stdout__.flush()
 
         try:
+            log.debug("TUI: calling llm.stream_chat via asyncio.to_thread")
             await asyncio.to_thread(self.llm.stream_chat, messages, on_token)
+            log.debug("TUI: llm.stream_chat completed")
 
         except Exception as e:
+            log.error(f"TUI: Exception in _stream_llm: {e}")
             fallback = f"\n[Sorry, I couldn't process that request: {e}]\n"
             self.append_chat(fallback)
             self.chat_history.append({"role": "assistant", "content": fallback})
             return
 
-        # Fallback: no tokens streamed
         if not response_parts:
+            log.warning("TUI: _stream_llm completed but response_parts is empty")
             fallback = "\n[I'm not sure how to answer that, but I'm still here and listening.]\n"
             self.append_chat(fallback)
             self.chat_history.append({"role": "assistant", "content": fallback})
             return
 
-        # Normal completion
         full_response = "".join(response_parts).strip()
         self.append_chat("\n")
         self.chat_history.append({"role": "assistant", "content": full_response})
@@ -172,9 +144,6 @@ class LuminApp(App):
         if self.tts_enabled and full_response:
             threading.Thread(target=self.tts.speak, args=(full_response,), daemon=True).start()
 
-    # -----------------------------------------------------
-    # ALWAYS LISTEN LOOP
-    # -----------------------------------------------------
     def _always_listen_loop(self):
         while not self._stop_flag:
             time.sleep(0.1)
@@ -192,9 +161,6 @@ class LuminApp(App):
                     time.sleep(0.05)
                 threading.Thread(target=self._run_stt_cycle, daemon=True).start()
 
-    # -----------------------------------------------------
-    # PASSIVE LISTEN
-    # -----------------------------------------------------
     def _passive_listen_for_wake_word(self):
         try:
             result_type, text = self.stt.listen(max_duration=1.0)
@@ -204,9 +170,6 @@ class LuminApp(App):
         except Exception:
             return ""
 
-    # -----------------------------------------------------
-    # FULL STT CYCLE (THREAD-SAFE)
-    # -----------------------------------------------------
     def _run_stt_cycle(self):
         self.listening = True
 
@@ -231,12 +194,8 @@ class LuminApp(App):
         self.call_from_thread(lambda: self.append_chat(f"You: {text}\n"))
         self.chat_history.append({"role": "user", "content": text})
 
-        # SAFE async call from a thread
         self.call_from_thread(lambda: self.run_worker(self._stream_llm(text)))
 
-    # -----------------------------------------------------
-    # CLEAN SHUTDOWN
-    # -----------------------------------------------------
     def on_exit(self):
         self._stop_flag = True
         self.tts.stop()

@@ -20,29 +20,42 @@ class OllamaChat:
         log.debug(f"OllamaChat initialized: url={self.base_url}, model={self.model}")
 
 
-    def run(self, messages):
-        transcript = ""
-        for msg in messages:
-            role = msg["role"]
-            content = msg["content"]
-
-            if role == "user":
-                transcript += f"User: {content}\n"
-            else:
-                transcript += f"Assistant: {content}\n"
-
-        transcript += "Assistant:"
+    def stream_chat(self, messages, on_token=None):
+        log.debug(f"OllamaChat.stream_chat called, messages={messages}, on_token={on_token}")
 
         payload = {
             "model": self.model,
-            "prompt": transcript,
-            "stream": False
+            "messages": messages,
+            "stream": True
         }
 
-        log.debug(f"Sending to Ollama /api/generate: {payload}")
+        url = f"{self.base_url}/api/chat"
+        log.debug(f"OllamaChat: Streaming to {url} with payload={payload}")
 
-        resp = requests.post(f"{self.base_url}/api/generate", json=payload)
-        resp.raise_for_status()
+        with requests.post(url, json=payload, stream=True) as resp:
+            log.debug(f"OllamaChat: response status={resp.status_code}")
+            resp.raise_for_status()
 
-        data = resp.json()
-        return data.get("response", "")
+            for line in resp.iter_lines(decode_unicode=True):
+                log.debug(f"OllamaChat: raw line='{line}'")
+
+                if not line:
+                    continue
+
+                try:
+                    data = json.loads(line)
+                except Exception as e:
+                    log.error(f"OllamaChat: JSON parse error: {e}, line='{line}'")
+                    continue
+
+                # Chat API format
+                if "message" in data and "content" in data["message"]:
+                    token = data["message"]["content"]
+                    log.debug(f"OllamaChat: token='{token}'")
+
+                    if on_token:
+                        on_token(token)
+
+                if data.get("done"):
+                    log.debug("OllamaChat: done flag received")
+                    break
