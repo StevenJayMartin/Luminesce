@@ -8,9 +8,10 @@ from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, Input, TextArea, Button
 from textual.containers import Container, VerticalScroll
 
-from voice.stt import SpeechRecognizer
-from voice.tts import Speaker
-from core.ollama_client import OllamaChat
+from lumin.voice.stt import SpeechRecognizer
+from lumin.voice.tts import Speaker
+from lumin.core.ollama_client import OllamaChat
+
 
 log = logging.getLogger("lumin-ui")
 
