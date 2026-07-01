@@ -37,13 +37,14 @@ with open(CONFIG_PATH, "r") as f:
 # ------------------------------------------------------------
 # OPTIONAL: WARMUP (SAFE IMPORT)
 # ------------------------------------------------------------
+'''
 try:
     from lumin.main import warm_llm
     warm_llm()
     print("LLM warmup complete.")
 except Exception as e:
     print("Warmup skipped or failed:", e)
-
+'''
 
 # ------------------------------------------------------------
 # FASTAPI APP

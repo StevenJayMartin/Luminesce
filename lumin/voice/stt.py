@@ -4,9 +4,23 @@ import logging
 import numpy as np
 import sounddevice as sd
 from vosk import Model, KaldiRecognizer
-from scipy.signal import resample
 
 log = logging.getLogger("stt")
+
+# ---------------------------------------------------------
+# Pure NumPy resampler (replaces SciPy)
+# ---------------------------------------------------------
+def np_resample(data, target_len):
+    old_len = len(data)
+    if old_len == target_len:
+        return data
+
+    # Linear interpolation resampling
+    return np.interp(
+        np.linspace(0, old_len, target_len, endpoint=False),
+        np.arange(old_len),
+        data
+    ).astype(np.int16)
 
 
 class SpeechRecognizer:
@@ -21,12 +35,12 @@ class SpeechRecognizer:
         self.listen_mode = voice_cfg["listen_mode"]
 
         # Wake/control words
-        self.wake_words = [w.lower() for w in config["voice"]["wake_words"]]
-        self.stop_words = [w.lower() for w in config["voice"]["stop_words"]]
-        self.clear_words = [w.lower() for w in config["voice"]["clear_words"]]
-        self.listen_again_words = [w.lower() for w in config["voice"]["listen_again_words"]]
+        self.wake_words = [w.lower() for w in voice_cfg["wake_words"]]
+        self.stop_words = [w.lower() for w in voice_cfg["stop_words"]]
+        self.clear_words = [w.lower() for w in voice_cfg["clear_words"]]
+        self.listen_again_words = [w.lower() for w in voice_cfg["listen_again_words"]]
 
-        # Volume callback (IMPORTANT: store it)
+        # Volume callback
         self.volume_callback = volume_callback
 
         # Device capabilities
@@ -80,14 +94,14 @@ class SpeechRecognizer:
         start_time = time.time()
 
         # -----------------------------------------------------
-        # Audio callback (protected)
+        # Audio callback
         # -----------------------------------------------------
         def callback(indata, frames, time_info, status):
             try:
                 if status:
                     log.warning(f"Audio status: {status}")
 
-                # Collapse to mono safely
+                # Collapse to mono
                 if indata.ndim == 2:
                     mono = indata.mean(axis=1)
                 else:
@@ -96,11 +110,8 @@ class SpeechRecognizer:
                 # Convert float32 → int16
                 audio = (mono * 32767).astype(np.int16)
 
-                # Debug: raw amplitude
+                # Volume meter
                 max_amp = float(np.abs(audio).max())
-                log.debug(f"Audio max amplitude: {max_amp}")
-
-                # Volume meter (protected)
                 if self.volume_callback:
                     try:
                         level = min(1.0, max_amp / 32768.0)
@@ -108,14 +119,14 @@ class SpeechRecognizer:
                     except Exception as e:
                         log.error(f"Volume callback error: {e}")
 
-                # RESAMPLE to 16 kHz for Vosk (if needed)
+                # RESAMPLE to 16 kHz for Vosk
                 if self.samplerate != 16000:
                     target_len = int(len(audio) * 16000 / self.samplerate)
-                    audio = resample(audio, target_len).astype(np.int16)
+                    audio = np_resample(audio, target_len)
 
                 audio_q.put(audio)
+
             except Exception as e:
-                # Catch ALL exceptions to avoid crashing PortAudio
                 log.error(f"Audio callback error: {e}")
 
         # -----------------------------------------------------
