@@ -4,6 +4,7 @@ import os
 import logging
 import winsound
 import threading
+import time
 
 log = logging.getLogger("tts")
 log.setLevel(logging.INFO)
@@ -13,45 +14,56 @@ class TTS:
         self.piper_path = piper_path
         self.model_path = model_path
 
-    # ----------------------------------------------------
-    # PUBLIC: Non-blocking TTS entry point (async via thread)
-    # ----------------------------------------------------
     def speak(self, text: str):
         if not text.strip():
             return
 
-        # Run TTS in a background thread
         threading.Thread(
             target=self._speak_sync,
             args=(text,),
             daemon=True
         ).start()
 
-    # ----------------------------------------------------
-    # INTERNAL: Actual synchronous TTS logic
-    # ----------------------------------------------------
     def _speak_sync(self, text: str):
         log.debug(f"Piper TTS speaking: {text[:60]}...")
 
-        wav_path = f"tts_{uuid.uuid4()}.wav"
+        # ⭐ FIX: Write WAV inside the Piper folder
+        wav_path = os.path.join(
+            os.path.dirname(self.piper_path),
+            f"tts_{uuid.uuid4()}.wav"
+        )
 
         try:
-            # Capture Piper logs to a file instead of polluting UI
             with open("logs/piper_raw.log", "a", encoding="utf-8") as f:
                 f.write("\n--- Piper TTS Invocation ---\n")
+
                 subprocess.run(
                     [
                         self.piper_path,
                         "-m", self.model_path,
+                        "--stdin",
                         "-f", wav_path
                     ],
                     input=text.encode("utf-8"),
                     check=True,
-                    stdout=f,      # capture stdout
-                    stderr=f       # capture stderr
+                    stdout=f,
+                    stderr=f,
+                    cwd=os.path.dirname(self.piper_path)
                 )
 
-            # Play audio natively on Windows
+            # Wait for WAV to finish writing
+            last_size = -1
+            while True:
+                try:
+                    size = os.path.getsize(wav_path)
+                    if size == last_size:
+                        break
+                    last_size = size
+                    time.sleep(0.05)
+                except FileNotFoundError:
+                    time.sleep(0.01)
+
+            # ⭐ Play the WAV from the correct folder
             winsound.PlaySound(wav_path, winsound.SND_FILENAME)
 
         except Exception as e:
@@ -63,9 +75,6 @@ class TTS:
             except Exception:
                 pass
 
-    # ----------------------------------------------------
-    # Compatibility methods for UI
-    # ----------------------------------------------------
     def is_busy(self):
         return False
 
