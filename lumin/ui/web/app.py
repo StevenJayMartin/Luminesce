@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from .search_tools import duckduckgo_search
+from lumin.tools.web_search import web_search
 
 # ------------------------------------------------------------
 # PATHS

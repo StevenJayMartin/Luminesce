@@ -1,6 +1,5 @@
-# tools/web_search.py
+# lumin/tools/web_search.py
 import requests
-
 
 def web_search(query: str) -> str:
     """
@@ -32,3 +31,8 @@ def web_search(query: str) -> str:
             return item["Text"]
 
     return "No results found from DuckDuckGo."
+
+
+# Register this tool with the global registry
+from lumin.tools.registry import register
+register("web_search", web_search)

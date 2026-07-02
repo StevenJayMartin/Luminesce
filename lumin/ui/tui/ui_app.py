@@ -13,6 +13,9 @@ from textual.containers import Container, VerticalScroll
 from lumin.core.ollama_client import OllamaChat
 from lumin.voice.stt import SpeechRecognizer
 
+from lumin.tools.registry import get as get_tool
+
+
 log = logging.getLogger("lumin-ui")
 
 SYSTEM_PROMPT = """
@@ -220,6 +223,20 @@ class LuminApp(App):
     # ---------------------------------------------------------
     # Main LLM Streaming
     # ---------------------------------------------------------
+
+    #- moved to top from lumin.tools.registry import get as get_tool
+
+    def _execute_tool(self, name, args):
+        tool = get_tool(name)
+        if not tool:
+            return {"error": f"Unknown tool '{name}'"}
+
+        try:
+            return tool(**args)
+        except Exception as e:
+            return {"error": str(e)}
+
+    
     async def _stream_llm(self, text: str):
         log.debug(f"TUI: _stream_llm called with text='{text}'")
 
@@ -284,8 +301,18 @@ class LuminApp(App):
                 self.append_chat(block)
 
                 # Execute tool
+                #- query = args.get("query", text)
+                #- duck_results = await self._call_duckduckgo(query)
+                
+                # Execute tool via registry first
                 query = args.get("query", text)
-                duck_results = await self._call_duckduckgo(query)
+                tool_result = self._execute_tool(name, args)
+
+                # If registry tool fails, fall back to FastAPI DuckDuckGo
+                if isinstance(tool_result, dict) and "error" in tool_result:
+                    duck_results = await self._call_duckduckgo(query)
+                else:
+                    duck_results = tool_result
 
                 # Show results
                 results_block = self._format_duck_results_block(
