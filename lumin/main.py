@@ -107,6 +107,11 @@ def parse_args():
         help="Override model name from config.json"
     )
     parser.add_argument(
+        "--llm-mode",
+        choices=["chat", "generate"],
+        help="Override Ollama mode (chat or generate)"
+    )
+    parser.add_argument(
         "--ollama",
         help="Override Ollama base URL (e.g. http://localhost:11434)"
     )
@@ -145,6 +150,9 @@ def main():
     # apply CLI overrides
     if args.model:
         config["ollama"]["model"] = args.model
+        
+    if args.llm_mode:
+        config["ollama"]["mode"] = args.llm_mode
 
     if args.ollama:
         config["ollama"]["url"] = args.ollama
