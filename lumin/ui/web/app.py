@@ -7,9 +7,6 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-
-from lumin.tools.web_search import web_search
 
 # ------------------------------------------------------------
 # PATHS
@@ -49,37 +46,53 @@ if os.path.isdir(STATIC_PATH):
 def root():
     return FileResponse(INDEX_PATH)
 
-
 @app.get("/config")
 def get_config():
     return {
-        "llm": {
+        "ollama": {
             "url": config["ollama"]["url"],
-            "model": config["ollama"]["model"]
+            "model": config["ollama"]["model"],
+            "mode": config["ollama"].get("mode", "generate")
         },
-        "ui": {
-            "mode": config["ui"].get("mode", "auto"),
-            "width": config["ui"].get("width", "auto"),
-            "theme": config["ui"].get("theme", "dark"),
-            "animations": config["ui"].get("animations", True)
-        }
+        "ui": config["ui"]
     }
 
+# ------------------------------------------------------------
+# GENERATE ENDPOINT
+# ------------------------------------------------------------
 
-class DuckRequest(BaseModel):
-    query: str
+@app.post("/api/generate")
+async def generate(req: dict):
+    text = req.get("text", "")
+    if not text:
+        return {"reply": ""}
 
+    payload = {
+        "model": config["ollama"]["model"],
+        "prompt": text,
+        "stream": False
+    }
 
-@app.post("/tools/duckduckgo_search")
-async def duckduckgo_tool(req: DuckRequest):
-    results = duckduckgo_search(req.query)
-    return {"results": results}
+    try:
+        r = requests.post(
+            f"{config['ollama']['url']}/api/generate",
+            json=payload
+        )
+
+        print("OLLAMA RAW RESPONSE:", r.text)
+
+        resp = r.json()
+        return {"reply": resp.get("response", "")}
+
+    except Exception as e:
+        print("ERROR in /api/generate:", e)
+        return {"reply": "Error contacting model."}
 
 # ------------------------------------------------------------
-# WEBSOCKET CHAT
+# CHAT WEBSOCKET
 # ------------------------------------------------------------
+
 conversations = {}
-
 
 @app.websocket("/ws/chat")
 async def websocket_chat(ws: WebSocket):
@@ -112,6 +125,7 @@ async def websocket_chat(ws: WebSocket):
                     "stream": False
                 }
             ).json()
+
             reply = response.get("response", "").strip()
 
             conversations[session_id].append({"role": "assistant", "content": reply})

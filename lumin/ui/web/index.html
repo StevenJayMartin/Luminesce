@@ -16,17 +16,6 @@
         --accent: #1e88e5;
     }
 
-    /* Light theme */
-    .light-theme {
-        --bg: #f5f5f5;
-        --fg: #222;
-        --bubble-user: #1976d2;
-        --bubble-assistant: #ddd;
-        --input-bg: #fff;
-        --input-fg: #222;
-        --accent: #1976d2;
-    }
-
     body {
         margin: 0;
         padding: 0;
@@ -39,7 +28,6 @@
         overflow: hidden;
     }
 
-    /* Layout containers */
     #chat-container {
         flex: 1;
         overflow-y: auto;
@@ -74,7 +62,6 @@
         margin-left: 10px;
     }
 
-    /* Message bubbles */
     .msg {
         max-width: 80%;
         padding: 12px;
@@ -94,32 +81,6 @@
         color: var(--fg);
         margin-right: auto;
     }
-
-    /* Phone mode */
-    .phone-mode #chat-container {
-        padding: 10px;
-    }
-
-    .phone-mode .msg {
-        max-width: 95%;
-        font-size: 1.1em;
-    }
-
-    /* Browser mode */
-    .browser-mode #chat-container {
-        max-width: 900px;
-        margin: 0 auto;
-    }
-
-    /* Animations */
-    .animate .msg {
-        animation: fadeIn 0.25s ease;
-    }
-
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(5px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
 </style>
 </head>
 
@@ -127,81 +88,35 @@
 <div id="chat-container"></div>
 
 <div id="input-bar">
-    <input id="input" placeholder="Type here..." />
+    <input id="input" placeholder="Type a message...">
     <button id="send">Send</button>
 </div>
 
 <script>
+let config = null;
+let configLoaded = false;
+
 let ws = null;
 let session = null;
-let config = null;
 
-/* ---------------------------------------------------
-   Load config.json
---------------------------------------------------- */
+function addMessage(role, text) {
+    const div = document.createElement("div");
+    div.className = `msg ${role}`;
+    div.textContent = text;
+    document.getElementById("chat-container").appendChild(div);
+    div.scrollIntoView();
+}
+
 async function loadConfig() {
     config = await fetch("/config").then(r => r.json());
-    applyUiMode(config.ui.mode);
-    applyTheme(config.ui.theme);
-    applyAnimations(config.ui.animations);
-}
+    console.log("WEB UI MODE:", config.ollama.mode);
+    configLoaded = true;
 
-/* ---------------------------------------------------
-   UI Mode Switching
---------------------------------------------------- */
-function applyUiMode(mode) {
-    const root = document.documentElement;
-
-    root.classList.remove("phone-mode", "browser-mode");
-
-    if (mode === "phone") {
-        root.classList.add("phone-mode");
-    } else if (mode === "browser") {
-        root.classList.add("browser-mode");
-    } else {
-        // auto mode
-        if (window.innerWidth < 600) {
-            root.classList.add("phone-mode");
-        } else {
-            root.classList.add("browser-mode");
-        }
+    if (config.ollama.mode === "chat") {
+        connectWS();
     }
 }
 
-/* Auto mode reacts to window resize */
-window.addEventListener("resize", () => {
-    if (config && config.ui.mode === "auto") {
-        applyUiMode("auto");
-    }
-});
-
-/* ---------------------------------------------------
-   Theme Switching
---------------------------------------------------- */
-function applyTheme(theme) {
-    const root = document.documentElement;
-    root.classList.remove("light-theme");
-
-    if (theme === "light") {
-        root.classList.add("light-theme");
-    }
-}
-
-/* ---------------------------------------------------
-   Animation Toggle
---------------------------------------------------- */
-function applyAnimations(enabled) {
-    const root = document.documentElement;
-    if (enabled) {
-        root.classList.add("animate");
-    } else {
-        root.classList.remove("animate");
-    }
-}
-
-/* ---------------------------------------------------
-   WebSocket Chat
---------------------------------------------------- */
 function connectWS() {
     ws = new WebSocket(`ws://${location.host}/ws/chat`);
 
@@ -215,40 +130,36 @@ function connectWS() {
     };
 }
 
-/* ---------------------------------------------------
-   Add message to UI
---------------------------------------------------- */
-function addMessage(role, text) {
-    const div = document.createElement("div");
-    div.className = `msg ${role}`;
-    div.textContent = text;
-    document.getElementById("chat-container").appendChild(div);
-    document.getElementById("chat-container").scrollTop = 
-        document.getElementById("chat-container").scrollHeight;
+async function sendGenerate(text) {
+    const resp = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text })
+    }).then(r => r.json());
+
+    addMessage("assistant", resp.reply);
 }
 
-/* ---------------------------------------------------
-   Send message
---------------------------------------------------- */
 document.getElementById("send").onclick = () => {
+    if (!configLoaded) {
+        console.warn("Config not loaded yet");
+        return;
+    }
+
     const text = document.getElementById("input").value.trim();
     if (!text) return;
 
     addMessage("user", text);
     document.getElementById("input").value = "";
 
-    ws.send(JSON.stringify({
-        session: session,
-        text: text
-    }));
+    if (config.ollama.mode === "generate") {
+        sendGenerate(text);
+    } else {
+        ws.send(JSON.stringify({ session, text }));
+    }
 };
 
-/* ---------------------------------------------------
-   Startup
---------------------------------------------------- */
 loadConfig();
-connectWS();
 </script>
-
 </body>
 </html>
