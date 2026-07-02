@@ -1,7 +1,7 @@
 {
   "ollama": {
     "url": "http://192.168.1.184:11434",
-    "model": "llama3.2:latest",
+    "model": "llama3.1:latest",
     "mode": "generate"
   },
 
@@ -27,8 +27,8 @@
   },
 
   "tools": {
-    "enabled": false,
-    "list": ["web_search"],
+    "enabled": true,
+    "list": ["duckduckgo_search"],
     "search_engine": "duckduckgo"
   },
 

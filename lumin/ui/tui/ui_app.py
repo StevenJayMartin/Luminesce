@@ -3,6 +3,7 @@ import logging
 import time
 import sys
 import asyncio
+import requests
 
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, Input, TextArea, Button
@@ -99,6 +100,54 @@ class LuminApp(App):
         except Exception as e:
             self.append_chat(f"Error: {e}\n")
 
+    async def _call_duckduckgo(self, query: str):
+        try:
+            resp = requests.post(
+                "http://localhost:8000/tools/duckduckgo_search",
+                json={"query": query},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json().get("results", [])
+        except Exception as e:
+            log.error(f"TUI: DuckDuckGo call failed: {e}")
+            return []
+
+    def _format_duck_results_block(self, results):
+        if not results:
+            return "🔎 DuckDuckGo Search Results:\n• [no results]\n"
+
+        lines = ["🔎 DuckDuckGo Search Results:"]
+        for r in results:
+            title = r.get("title", "").strip()
+            snippet = r.get("snippet", "").strip()
+            lines.append(f"• {title} — {snippet}")
+        return "\n".join(lines) + "\n"
+
+    async def _continue_llm_with_results(self, results):
+        block = self._format_duck_results_block(results)
+        messages = [
+            {"role": "user", "content": f"Here are search results:\n{block}\nPlease answer based on these."}
+        ]
+
+        response_parts = []
+
+        def on_token(token: str):
+            response_parts.append(token)
+            self.append_chat(token)
+            if self.stream_to_terminal:
+                sys.__stdout__.write(token)
+                sys.__stdout__.flush()
+
+        await asyncio.to_thread(self.llm.stream_chat, messages, on_token)
+
+        full_response = "".join(response_parts).strip()
+        self.append_chat("\n")
+        self.chat_history.append({"role": "assistant", "content": full_response})
+
+        if self.tts_enabled and full_response:
+            threading.Thread(target=self.tts.speak, args=(full_response,), daemon=True).start()
+
     async def _stream_llm(self, text: str):
         log.debug(f"TUI: _stream_llm called with text='{text}'")
 
@@ -120,8 +169,8 @@ class LuminApp(App):
 
         try:
             log.debug("TUI: calling llm.stream_chat via asyncio.to_thread")
-            await asyncio.to_thread(self.llm.stream_chat, messages, on_token)
-            log.debug("TUI: llm.stream_chat completed")
+            result = await asyncio.to_thread(self.llm.stream_chat, messages, on_token)
+            log.debug(f"TUI: llm.stream_chat completed, result={result}")
 
         except Exception as e:
             log.error(f"TUI: Exception in _stream_llm: {e}")
@@ -129,6 +178,18 @@ class LuminApp(App):
             self.append_chat(fallback)
             self.chat_history.append({"role": "assistant", "content": fallback})
             return
+
+        if isinstance(result, dict) and "tool_call" in result:
+            tool = result["tool_call"].get("name")
+            args = result["tool_call"].get("arguments", {})
+
+            if self.config.get("tools", {}).get("enabled", False) and tool == "duckduckgo_search":
+                query = args.get("query", text)
+                duck_results = await self._call_duckduckgo(query)
+                block = self._format_duck_results_block(duck_results)
+                self.append_chat("\n" + block)
+                await self._continue_llm_with_results(duck_results)
+                return
 
         if not response_parts:
             log.warning("TUI: _stream_llm completed but response_parts is empty")

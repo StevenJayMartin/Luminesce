@@ -20,7 +20,6 @@ class OllamaChat:
 
         log.debug(f"OllamaChat initialized: url={self.base_url}, model={self.model}, mode={self.mode}")
 
-
     # -----------------------------------------------------
     # STREAM CHAT MODE (TUI)
     # -----------------------------------------------------
@@ -50,6 +49,11 @@ class OllamaChat:
                     log.error(f"OllamaChat: CHAT JSON parse error: {e}, line='{line}'")
                     continue
 
+                # tool-call interrupt
+                if "tool_call" in data:
+                    log.debug(f"OllamaChat: CHAT TOOL_CALL detected: {data['tool_call']}")
+                    return {"tool_call": data["tool_call"]}
+
                 if "message" in data and "content" in data["message"]:
                     token = data["message"]["content"]
                     log.debug(f"OllamaChat: CHAT token='{token}'")
@@ -59,12 +63,12 @@ class OllamaChat:
                     log.debug("OllamaChat: CHAT done flag received")
                     break
 
+        return None
 
     # -----------------------------------------------------
     # STREAM GENERATE MODE (WEB UI)
     # -----------------------------------------------------
     def _stream_generate(self, messages, on_token):
-        # Convert messages → transcript
         transcript = ""
         for msg in messages:
             role = msg["role"]
@@ -102,7 +106,6 @@ class OllamaChat:
                     log.debug(f"OllamaChat: GENERATE token='{token}'")
                     on_token(token)
 
-
     # -----------------------------------------------------
     # PUBLIC STREAM METHOD
     # -----------------------------------------------------
@@ -110,6 +113,10 @@ class OllamaChat:
         log.debug(f"OllamaChat.stream_chat called, mode={self.mode}, messages={messages}")
 
         if self.mode == "chat":
-            self._stream_chat(messages, on_token)
+            result = self._stream_chat(messages, on_token)
+            if isinstance(result, dict) and "tool_call" in result:
+                return result
+            return None
         else:
             self._stream_generate(messages, on_token)
+            return None
