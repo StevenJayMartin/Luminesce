@@ -212,7 +212,7 @@ class LuminApp(App):
                 sys.__stdout__.flush()
 
         try:
-            result = await asyncio.to_thread(self.llm.stream_chat, messages, on_token)
+            result = await asyncio.to_thread(self.llm.stream, messages, on_token)
 
         except Exception as e:
             log.error(f"TUI: Exception in _stream_llm: {e}")
