@@ -1,6 +1,6 @@
 {
   "ollama": {
-    "url": "http://192.168.1.184:11434",
+    "url": "http://192.168.1.196:11434",
     "model": "llama3:latest",
     "mode": "generate"
   },
