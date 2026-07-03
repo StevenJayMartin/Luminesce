@@ -1,76 +1,95 @@
-
-
+README.md (raw Markdown)
+markdown
 <p align="center">
-  <img src="banner.svg" alt="Lumin – Local Light-Bulb Assistant" />
+  <img src="banner.svg" alt="Lumin – Local Light‑Bulb Assistant" />
 </p>
 
+<h1 align="center">Lumin · Local Light‑Bulb Assistant</h1>
 
-🌟 Lumin — A Local, Modular, Voice‑Driven AI Assistant
-A fully offline, privacy‑first, wake‑word‑activated assistant powered by Textual, Vosk, and Ollama.
+<p align="center">
+  <strong>A fully local, voice‑driven AI assistant with a glowing bulb personality.</strong><br/>
+  No cloud. No telemetry. Just your machine, your models, your rules.
+</p>
 
-Lumin is a local AI assistant designed to feel alive — a glowing bulb that listens, thinks, and speaks entirely on your machine. No cloud. No tracking. No external dependencies beyond the open‑source tools you choose.
+<p align="center">
+  <a href="#-features">Features</a> ·
+  <a href="#-architecture">Architecture</a> ·
+  <a href="#-configuration">Configuration</a> ·
+  <a href="#-running-lumin">Running Lumin</a> ·
+  <a href="#-contributing">Contributing</a>
+</p>
 
-This project is built for developers who want a hackable, modular, and fun voice assistant they can extend endlessly.
+---
 
-🚀 Features
-🎤 Speech Recognition (STT)
-Powered by Vosk (offline)
+## 🌟 Why Lumin?
 
-High‑pass filtering for clarity
+Lumin is a local AI assistant designed to feel alive — a glowing bulb that listens, thinks, and speaks entirely on your machine.
 
-Silence detection
+- **Local‑first:** Everything runs on your hardware.  
+- **Voice‑native:** Wake‑word, speech recognition, and text‑to‑speech built in.  
+- **Hackable:** Modular Python components you can extend, replace, or remix.  
+- **Fun:** Animated UI, personality, and room to play.
 
-Volume metering (for the filament meter)
+If you’ve ever wanted a **personal Copilot** that lives on your desktop instead of in the cloud, Lumin is for you.
 
-Wake‑word detection:
+---
 
-“Lumin”
+## 🚀 Features
 
-“Hey Lumin”
+### 🎤 Speech Recognition (STT)
 
-Control words:
+- Offline STT powered by **Vosk**  
+- High‑pass filtering for clarity  
+- Silence detection  
+- Volume metering (for the filament meter)  
+- Wake‑words:
+  - `Lumin`
+  - `Hey Lumin`  
+- Control words:
+  - `stop`, `cancel`
+  - `clear that`, `reset`
+  - `listen again`, `start over`
 
-stop / cancel
+### 🧠 Local LLM Integration
 
-clear that / reset
+- Uses **Ollama** for fully local inference  
+- Streaming, token‑by‑token responses  
+- Works with any installed Ollama model  
+- Simple client API:
+  - `stream_chat(messages, on_token)`
+  - `ask(messages)`
 
-listen again / start over
+### 🔊 Text‑to‑Speech (TTS)
 
-🧠 Local LLM Integration
-Uses Ollama for fully local inference
+- Powered by **pyttsx3**  
+- Non‑blocking threaded engine  
+- Queue‑based speech  
+- Wake‑word does not interrupt TTS  
+- Clean shutdown, no overlapping messages
 
-Streaming token‑by‑token responses
+### 💡 Textual UI
 
-Works with any installed Ollama model
+- Animated bulb widget (idle, listening, thinking, speaking)  
+- Filament volume meter  
+- Push‑to‑talk (`Ctrl+M`)  
+- Always‑listen mode  
+- Thread‑safe UI updates  
+- Simple state machine:
+  - idle → listening → thinking → speaking
 
-🔊 Text‑to‑Speech (TTS)
-Powered by pyttsx3
+### 🔐 Privacy‑First
 
-Non‑blocking threaded engine
+- No cloud calls  
+- No telemetry  
+- Your voice and data never leave your machine  
 
-Queue‑based speech
+---
 
-Wake‑word does not interrupt TTS
+## 🧱 Architecture
 
-💡 Textual UI
-Animated bulb widget (idle, listening, thinking, speaking)
-
-Filament volume meter
-
-Push‑to‑talk (Ctrl+M)
-
-Always‑listen mode
-
-🔐 Privacy‑First
-Everything runs locally.
-No cloud calls.
-No telemetry.
-Your voice never leaves your machine.
-
-📁 Project Structure
 Lumin is intentionally modular — each component lives in its own file for clarity and easy hacking.
 
-```
+```text
 lumin/
 │
 ├── main.py              # Entry point, config loading, CLI overrides
@@ -78,34 +97,19 @@ lumin/
 ├── tts.py               # Threaded text-to-speech engine
 ├── ollama_client.py     # Streaming LLM client for Ollama
 └── ui_app.py            # Textual UI + assistant orchestration
-```
+main.py — The Conductor
+Parses CLI arguments
 
-Below is a breakdown of what each module does.
+Loads config.json
 
-🧩 Module Overview
-main.py
-The entrypoint of the application.
+Applies overrides
 
-Handles:
+Launches the Textual UI (LuminApp)
 
-Argument parsing
-
-Config loading (config.json)
-
-Applying CLI overrides
-
-Launching the Textual UI (LuminApp)
-
-This file stays intentionally small and clean.
-
-stt.py
-The speech recognition engine.
-
-Provides:
-
+stt.py — The Ears
 Vosk STT pipeline
 
-Wake‑word detection (“Lumin”, “Hey Lumin”)
+Wake‑word detection ("Lumin", "Hey Lumin")
 
 Stop / Clear / Listen‑Again detection
 
@@ -115,24 +119,17 @@ High‑pass filtering
 
 Volume metering callback
 
-Returns structured results:
+Returns structured results like:
 
-"text"
-
-"stop"
-
-"clear"
-
-"listen_again"
-
-This module is the “ears” of Lumin.
-
-tts.py
-Threaded text‑to‑speech engine.
-
-Features:
-
-Non‑blocking speech
+python
+{
+  "text": "...",
+  "stop": False,
+  "clear": False,
+  "listen_again": False
+}
+tts.py — The Voice
+Threaded text‑to‑speech engine
 
 Internal queue
 
@@ -140,28 +137,18 @@ is_busy() flag (used by wake‑word logic)
 
 Clean shutdown
 
-No overlap between messages
+No overlapping messages
 
-This module is the “voice” of Lumin.
+ollama_client.py — The Brain
+Talks to the local Ollama server
 
-ollama_client.py
-Handles communication with the local Ollama server.
-
-Provides:
-
-stream_chat(messages, on_token) for streaming responses
+stream_chat(messages, on_token) for streaming
 
 ask(messages) for synchronous responses
 
-Automatic error handling
+Basic error handling and retries
 
-This module is the “brain” of Lumin.
-
-ui_app.py
-The heart of the assistant — the orchestrator.
-
-Contains:
-
+ui_app.py — The Body
 Textual UI
 
 Bulb widget
@@ -176,16 +163,12 @@ Wake‑word acknowledgment (“I’m listening.”)
 
 STT → LLM → TTS pipeline
 
-Thread‑safe UI updates
-
-State machine (idle, listening, thinking, speaking)
-
-This module is the “body” of Lumin.
+State machine: idle / listening / thinking / speaking
 
 ⚙️ Configuration
 Create a config.json in the project root:
 
-```json
+json
 {
   "model": "llama3.1",
   "ollama_url": "http://localhost:11434",
@@ -201,14 +184,13 @@ Create a config.json in the project root:
   "silence_threshold": 3000,
   "silence_duration": 0.6
 }
-```
-
 ▶️ Running Lumin
 From inside the lumin/ directory:
 
 bash
 python3 main.py
 Optional CLI overrides:
+
 bash
 python3 main.py --model llama3.2
 python3 main.py --mic 1
@@ -217,25 +199,22 @@ python3 main.py --ollama http://localhost:11435
 🧪 Requirements
 Install dependencies:
 
-```bash
+bash
 pip install sounddevice scipy vosk pyttsx3 textual requests numpy
 You also need:
 
-Vosk model
+Vosk model  
 Download any English model and place it in models/vosk/.
 
-Ollama
-Install from: https://ollama.com
-```
+Ollama  
+Install from their site, then pull a model:
 
-Then pull a model:
-
-```bash
+bash
 ollama pull llama3.1
-```
-
 🤝 Contributing
-Lumin is intentionally modular — adding new features is easy:
+Lumin is intentionally modular — adding new features should feel fun, not painful.
+
+You can:
 
 Add new widgets
 
@@ -247,21 +226,18 @@ Add new animations
 
 Add new LLM tools
 
-Add new commands (“turn on the lights”, “play music”, etc.)
+Add new commands ("turn on the lights", "play music", etc.)
 
 PRs are welcome.
 Ideas are welcome.
 Experiments are encouraged.
 
-💡 Final Thoughts
+💡 Vision
 Lumin is more than a script — it’s a platform for building a local, expressive, voice‑driven AI companion.
-You now have a clean, modular foundation that’s easy to extend and fun to hack on.
 
 If you want:
 
-A logo
-
-A project banner
+A logo and banner (see banner.svg)
 
 A CONTRIBUTING.md
 
@@ -273,20 +249,20 @@ A “Getting Started” video script
 
 A feature showcase GIF
 
-Just say the word and I’ll craft it.
-
-Lumin is alive — and you built it.
-
-## ⭐ Final Notes
+You’re in the right place.
 
 Lumin is early, but he’s already:
-- Listening
-- Thinking
-- Speaking
-- Animating
-- And making people smile
+
+Listening
+
+Thinking
+
+Speaking
+
+Animating
+
+And making people smile
 
 If you want to help shape a local, open, creative AI assistant —
 
-**welcome aboard.**
-
+welcome aboard.

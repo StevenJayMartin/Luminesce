@@ -5,26 +5,29 @@
 <title>Lumin Assistant</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<!-- Markdown renderer -->
+<!-- Markdown + syntax highlighting -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
 
 <style>
     :root {
-        --bg: #111;
-        --fg: #eee;
+        --bg: #050816;
+        --fg: #e5e7eb;
         --bubble-user: #1e88e5;
-        --bubble-assistant: #333;
-        --input-bg: #222;
-        --input-fg: #fff;
-        --accent: #1e88e5;
+        --bubble-assistant: #111827;
+        --input-bg: #0f172a;
+        --input-fg: #f9fafb;
+        --accent: #22c55e;
+        --border-subtle: #1f2937;
     }
 
     body {
         margin: 0;
         padding: 0;
-        background: var(--bg);
+        background: radial-gradient(circle at top left, #0f172a 0%, #020617 60%, #000 100%);
         color: var(--fg);
-        font-family: Arial, sans-serif;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         display: flex;
         flex-direction: column;
         height: 100vh;
@@ -42,17 +45,24 @@
         display: flex;
         padding: 10px;
         background: var(--input-bg);
-        border-top: 1px solid #444;
+        border-top: 1px solid var(--border-subtle);
     }
 
     #input {
         flex: 1;
         padding: 10px;
-        border: none;
+        border: 1px solid transparent;
         outline: none;
         background: var(--input-bg);
         color: var(--input-fg);
         font-size: 16px;
+        border-radius: 8px;
+        transition: border 0.2s, background 0.2s;
+    }
+
+    #input:focus {
+        border-color: var(--accent);
+        background: #020617;
     }
 
     #send {
@@ -63,14 +73,25 @@
         cursor: pointer;
         font-size: 16px;
         margin-left: 10px;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: background 0.2s, transform 0.1s;
+    }
+
+    #send:hover {
+        background: #16a34a;
+        transform: translateY(-1px);
     }
 
     .msg {
         max-width: 80%;
-        padding: 12px;
+        padding: 12px 14px;
         margin: 10px 0;
-        border-radius: 12px;
-        line-height: 1.4;
+        border-radius: 14px;
+        line-height: 1.5;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+        animation: fadeIn 0.25s ease-out;
+        word-wrap: break-word;
     }
 
     .user {
@@ -85,7 +106,6 @@
         margin-right: auto;
     }
 
-    /* Optional: style Markdown headings a bit */
     .assistant h1,
     .assistant h2,
     .assistant h3 {
@@ -98,17 +118,53 @@
     }
 
     .assistant code {
-        background: #222;
+        background: #0b1120;
         padding: 2px 4px;
         border-radius: 4px;
         font-family: Consolas, monospace;
+        font-size: 0.9em;
     }
 
     .assistant pre {
-        background: #222;
-        padding: 8px;
-        border-radius: 8px;
+        background: #0b1120;
+        padding: 10px;
+        border-radius: 10px;
         overflow-x: auto;
+        position: relative;
+    }
+
+    .copy-btn {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        font-size: 12px;
+        padding: 4px 8px;
+        border-radius: 6px;
+        border: none;
+        cursor: pointer;
+        background: #1f2937;
+        color: #e5e7eb;
+    }
+
+    #typing {
+        font-size: 14px;
+        opacity: 0.8;
+        font-style: italic;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 600px) {
+        .msg {
+            max-width: 95%;
+            font-size: 15px;
+        }
+        #chat-container {
+            padding: 12px;
+        }
     }
 </style>
 </head>
@@ -128,15 +184,54 @@ let configLoaded = false;
 let ws = null;
 let session = null;
 
-function addMessage(role, text) {
-    const div = document.createElement("div");
-    div.className = `msg ${role}`;
+function renderMarkdown(text) {
+    const html = marked.parse(text);
+    const container = document.createElement("div");
+    container.innerHTML = html;
 
-    // Render Markdown for all messages (user + assistant)
-    div.innerHTML = marked.parse(text);
+    container.querySelectorAll("pre code").forEach(block => {
+        hljs.highlightElement(block);
+        const pre = block.parentElement;
+        const btn = document.createElement("button");
+        btn.textContent = "Copy";
+        btn.className = "copy-btn";
+        btn.onclick = () => {
+            navigator.clipboard.writeText(block.innerText);
+        };
+        pre.appendChild(btn);
+    });
 
-    document.getElementById("chat-container").appendChild(div);
-    div.scrollIntoView();
+    return container.innerHTML;
+}
+
+function addMessage(role, text, reuseDiv = null) {
+    let div = reuseDiv;
+    if (!div) {
+        div = document.createElement("div");
+        div.className = `msg ${role}`;
+        document.getElementById("chat-container").appendChild(div);
+    }
+
+    div.innerHTML = renderMarkdown(text);
+    div.scrollIntoView({ behavior: "smooth" });
+    return div;
+}
+
+function showTyping() {
+    let t = document.getElementById("typing");
+    if (!t) {
+        t = document.createElement("div");
+        t.id = "typing";
+        t.className = "msg assistant";
+        t.textContent = "Lumin is thinking…";
+        document.getElementById("chat-container").appendChild(t);
+        t.scrollIntoView({ behavior: "smooth" });
+    }
+}
+
+function hideTyping() {
+    const t = document.getElementById("typing");
+    if (t) t.remove();
 }
 
 async function loadConfig() {
@@ -153,22 +248,49 @@ function connectWS() {
     ws = new WebSocket(`ws://${location.host}/ws/chat`);
 
     ws.onopen = () => console.log("WS connected");
-    ws.onclose = () => console.log("WS closed");
+    ws.onclose = () => {
+        console.log("WS closed, retrying...");
+        setTimeout(connectWS, 1000);
+    };
+
+    let currentAssistantDiv = null;
+    let accumulated = "";
 
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         session = data.session;
-        addMessage("assistant", data.reply);
+
+        const isStream = data.stream;
+        const chunk = data.reply || "";
+
+        if (!isStream) {
+            hideTyping();
+            if (!chunk) return;
+            currentAssistantDiv = addMessage("assistant", chunk);
+            accumulated = "";
+            return;
+        }
+
+        // streaming chunk
+        showTyping();
+        accumulated += chunk;
+        if (!currentAssistantDiv) {
+            currentAssistantDiv = addMessage("assistant", accumulated);
+        } else {
+            addMessage("assistant", accumulated, currentAssistantDiv);
+        }
     };
 }
 
 async function sendGenerate(text) {
+    showTyping();
     const resp = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text })
     }).then(r => r.json());
 
+    hideTyping();
     addMessage("assistant", resp.reply);
 }
 
@@ -187,9 +309,17 @@ document.getElementById("send").onclick = () => {
     if (config.ollama.mode === "generate") {
         sendGenerate(text);
     } else {
+        showTyping();
         ws.send(JSON.stringify({ session, text }));
     }
 };
+
+document.getElementById("input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        document.getElementById("send").click();
+    }
+});
 
 loadConfig();
 </script>

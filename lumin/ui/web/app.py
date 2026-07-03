@@ -52,13 +52,23 @@ def get_config():
         "ollama": {
             "url": config["ollama"]["url"],
             "model": config["ollama"]["model"],
-            "mode": config["ollama"].get("mode", "generate")
+            "mode": config["ollama"].get("mode", "chat")
         },
         "ui": config["ui"]
     }
 
 # ------------------------------------------------------------
-# GENERATE ENDPOINT (Markdown prompt)
+# SYSTEM / PERSONA PROMPT
+# ------------------------------------------------------------
+
+SYSTEM_PROMPT = """
+You are Lumin, a local, privacy-first, Markdown-fluent AI assistant.
+You respond with well-structured Markdown, using headings, lists, and code blocks when helpful.
+You are concise, friendly, and practical, and you never mention external services or clouds.
+"""
+
+# ------------------------------------------------------------
+# GENERATE ENDPOINT (non-stream, Markdown-aware)
 # ------------------------------------------------------------
 
 @app.post("/api/generate")
@@ -67,8 +77,7 @@ async def generate(req: dict):
     if not text:
         return {"reply": ""}
 
-    # Tell the LLM to respond in Markdown
-    prompt = f"Respond using clean, well-structured Markdown.\n\nUser: {text}\nAssistant:"
+    prompt = f"{SYSTEM_PROMPT.strip()}\n\nUser: {text}\nAssistant:"
 
     payload = {
         "model": config["ollama"]["model"],
@@ -92,7 +101,7 @@ async def generate(req: dict):
         return {"reply": "Error contacting model."}
 
 # ------------------------------------------------------------
-# CHAT WEBSOCKET (Markdown-aware transcript)
+# CHAT WEBSOCKET (streaming, Markdown-aware)
 # ------------------------------------------------------------
 
 conversations = {}
@@ -104,26 +113,24 @@ async def chat_ws(ws: WebSocket):
     conversations[session_id] = []
 
     try:
-        await ws.send_json({"session": session_id, "reply": "Connected. Ask me anything in chat mode."})
+        await ws.send_json({"session": session_id, "reply": "Connected. Ask me anything.", "stream": False})
 
         while True:
             data = await ws.receive_text()
             try:
                 msg = json.loads(data)
             except json.JSONDecodeError:
-                await ws.send_json({"session": session_id, "reply": "Invalid message format."})
+                await ws.send_json({"session": session_id, "reply": "Invalid message format.", "stream": False})
                 continue
 
             text = msg.get("text", "").strip()
             if not text:
-                await ws.send_json({"session": session_id, "reply": ""})
+                await ws.send_json({"session": session_id, "reply": "", "stream": False})
                 continue
 
-            # Store conversation
             conversations[session_id].append({"role": "user", "content": text})
 
-            # Build Markdown-aware transcript
-            transcript = "Respond using clean, well-structured Markdown with headings, lists, and code blocks when appropriate.\n\n"
+            transcript = SYSTEM_PROMPT.strip() + "\n\n"
             for m in conversations[session_id]:
                 transcript += f"{m['role'].capitalize()}: {m['content']}\n"
             transcript += "Assistant:"
@@ -131,25 +138,39 @@ async def chat_ws(ws: WebSocket):
             payload = {
                 "model": config["ollama"]["model"],
                 "prompt": transcript,
-                "stream": False
+                "stream": True
             }
 
             try:
                 r = requests.post(
                     f"{config['ollama']['url']}/api/generate",
-                    json=payload
+                    json=payload,
+                    stream=True
                 )
-                print("OLLAMA CHAT RAW RESPONSE:", r.text)
-                resp = r.json()
-                reply = resp.get("response", "")
 
-                conversations[session_id].append({"role": "assistant", "content": reply})
+                full_reply = ""
+                # typing indicator on client side; we just stream tokens
+                for line in r.iter_lines():
+                    if not line:
+                        continue
+                    try:
+                        chunk = json.loads(line.decode("utf-8"))
+                    except Exception:
+                        continue
 
-                await ws.send_json({"session": session_id, "reply": reply})
+                    token = chunk.get("response", "")
+                    if not token:
+                        continue
+
+                    full_reply += token
+                    await ws.send_json({"session": session_id, "reply": token, "stream": True})
+
+                conversations[session_id].append({"role": "assistant", "content": full_reply})
+                await ws.send_json({"session": session_id, "reply": full_reply, "stream": False})
 
             except Exception as e:
                 print("ERROR in /ws/chat:", e)
-                await ws.send_json({"session": session_id, "reply": "Error contacting model."})
+                await ws.send_json({"session": session_id, "reply": "Error contacting model.", "stream": False})
 
     except WebSocketDisconnect:
         print("WebSocket disconnected")

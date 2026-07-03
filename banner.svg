@@ -1,61 +1,82 @@
 <svg width="960" height="260" viewBox="0 0 960 260" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#050816"/>
-      <stop offset="100%" stop-color="#111827"/>
+      <stop offset="0%" stop-color="#020617"/>
+      <stop offset="50%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#020617"/>
     </linearGradient>
-    <radialGradient id="glow" cx="50%" cy="30%" r="60%">
-      <stop offset="0%" stop-color="#fef9c3" stop-opacity="0.9"/>
-      <stop offset="40%" stop-color="#fde68a" stop-opacity="0.6"/>
+    <radialGradient id="glow" cx="18%" cy="40%" r="45%">
+      <stop offset="0%" stop-color="#fef9c3" stop-opacity="0.95"/>
+      <stop offset="40%" stop-color="#fde68a" stop-opacity="0.7"/>
       <stop offset="100%" stop-color="#facc15" stop-opacity="0"/>
     </radialGradient>
+    <linearGradient id="bulbEdge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fef9c3"/>
+      <stop offset="100%" stop-color="#facc15"/>
+    </linearGradient>
   </defs>
 
   <rect width="960" height="260" fill="url(#bg)" />
 
-  <!-- Glow behind bulb -->
-  <circle cx="150" cy="130" r="120" fill="url(#glow)" />
-
-  <!-- Light bulb body -->
-  <g transform="translate(120,70)">
-    <!-- Bulb glass -->
-    <ellipse cx="30" cy="40" rx="40" ry="50" fill="#fef9c3" stroke="#facc15" stroke-width="3"/>
-    <!-- Face -->
-    <circle cx="15" cy="35" r="4" fill="#1f2937"/>
-    <circle cx="45" cy="35" r="4" fill="#1f2937"/>
-    <path d="M18 50 Q30 58 42 50" stroke="#1f2937" stroke-width="2" fill="none" stroke-linecap="round"/>
-    <!-- Filament -->
-    <path d="M20 28 Q30 20 40 28" stroke="#f59e0b" stroke-width="2" fill="none" stroke-linecap="round"/>
-
-    <!-- Base -->
-    <rect x="18" y="80" width="24" height="22" rx="4" fill="#4b5563"/>
-    <rect x="18" y="86" width="24" height="4" fill="#6b7280"/>
-    <rect x="18" y="94" width="24" height="4" fill="#6b7280"/>
-
-    <!-- Wires -->
-    <rect x="26" y="102" width="8" height="16" fill="#9ca3af"/>
+  <!-- subtle grid / waves -->
+  <g opacity="0.18" stroke="#1f2937" stroke-width="0.6">
+    <path d="M0 220 Q160 200 320 220 T640 220 T960 220" fill="none"/>
+    <path d="M0 200 Q160 180 320 200 T640 200 T960 200" fill="none"/>
   </g>
 
-  <!-- Title text -->
-  <text x="260" y="110" fill="#f9fafb" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-        font-size="42" font-weight="700">
+  <!-- Glow behind bulb -->
+  <circle cx="150" cy="130" r="130" fill="url(#glow)" />
+
+  <!-- Light bulb -->
+  <g transform="translate(120,60)">
+    <!-- outer halo -->
+    <circle cx="30" cy="50" r="60" fill="none" stroke="#facc15" stroke-width="2" stroke-opacity="0.4"/>
+
+    <!-- bulb glass -->
+    <ellipse cx="30" cy="50" rx="42" ry="54" fill="#fef9c3" stroke="url(#bulbEdge)" stroke-width="3"/>
+
+    <!-- glass highlight -->
+    <path d="M15 20 Q5 40 15 60" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-opacity="0.6"/>
+
+    <!-- face -->
+    <circle cx="16" cy="45" r="4" fill="#1f2937"/>
+    <circle cx="44" cy="45" r="4" fill="#1f2937"/>
+    <path d="M18 58 Q30 66 42 58" stroke="#1f2937" stroke-width="2" fill="none" stroke-linecap="round"/>
+
+    <!-- filament -->
+    <path d="M18 34 Q30 24 42 34" stroke="#f59e0b" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+
+    <!-- base -->
+    <rect x="18" y="86" width="24" height="22" rx="4" fill="#4b5563"/>
+    <rect x="18" y="92" width="24" height="4" fill="#6b7280"/>
+    <rect x="18" y="100" width="24" height="4" fill="#6b7280"/>
+
+    <!-- wires -->
+    <rect x="26" y="108" width="8" height="16" fill="#9ca3af"/>
+  </g>
+
+  <!-- Title -->
+  <text x="260" y="110" fill="#f9fafb"
+        font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        font-size="44" font-weight="700">
     Lumin
   </text>
 
   <!-- Subtitle -->
-  <text x="260" y="150" fill="#d1d5db" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+  <text x="260" y="150" fill="#d1d5db"
+        font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
         font-size="20" font-weight="400">
-    A local, voice-powered AI assistant with a glowing ASCII light bulb face
+    Local, voice-powered AI with a glowing light bulb personality
   </text>
 
   <!-- Tagline -->
-  <text x="260" y="185" fill="#9ca3af" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+  <text x="260" y="185" fill="#9ca3af"
+        font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
         font-size="16" font-weight="400">
     Fast · Private · Hackable · Fun
   </text>
 
-  <!-- Decorative dots -->
+  <!-- Decorative constellation -->
   <circle cx="820" cy="70" r="3" fill="#facc15"/>
   <circle cx="860" cy="110" r="3" fill="#f97316"/>
   <circle cx="830" cy="160" r="3" fill="#22c55e"/>
