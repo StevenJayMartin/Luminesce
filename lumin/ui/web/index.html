@@ -5,6 +5,9 @@
 <title>Lumin Assistant</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+<!-- Markdown renderer -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
 <style>
     :root {
         --bg: #111;
@@ -81,6 +84,32 @@
         color: var(--fg);
         margin-right: auto;
     }
+
+    /* Optional: style Markdown headings a bit */
+    .assistant h1,
+    .assistant h2,
+    .assistant h3 {
+        margin: 0.4em 0 0.2em;
+    }
+
+    .assistant ul {
+        padding-left: 1.2em;
+        margin: 0.2em 0;
+    }
+
+    .assistant code {
+        background: #222;
+        padding: 2px 4px;
+        border-radius: 4px;
+        font-family: Consolas, monospace;
+    }
+
+    .assistant pre {
+        background: #222;
+        padding: 8px;
+        border-radius: 8px;
+        overflow-x: auto;
+    }
 </style>
 </head>
 
@@ -102,7 +131,10 @@ let session = null;
 function addMessage(role, text) {
     const div = document.createElement("div");
     div.className = `msg ${role}`;
-    div.textContent = text;
+
+    // Render Markdown for all messages (user + assistant)
+    div.innerHTML = marked.parse(text);
+
     document.getElementById("chat-container").appendChild(div);
     div.scrollIntoView();
 }

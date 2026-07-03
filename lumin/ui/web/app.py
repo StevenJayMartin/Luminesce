@@ -58,7 +58,7 @@ def get_config():
     }
 
 # ------------------------------------------------------------
-# GENERATE ENDPOINT
+# GENERATE ENDPOINT (Markdown prompt)
 # ------------------------------------------------------------
 
 @app.post("/api/generate")
@@ -67,9 +67,12 @@ async def generate(req: dict):
     if not text:
         return {"reply": ""}
 
+    # Tell the LLM to respond in Markdown
+    prompt = f"Respond using clean, well-structured Markdown.\n\nUser: {text}\nAssistant:"
+
     payload = {
         "model": config["ollama"]["model"],
-        "prompt": text,
+        "prompt": prompt,
         "stream": False
     }
 
@@ -89,51 +92,66 @@ async def generate(req: dict):
         return {"reply": "Error contacting model."}
 
 # ------------------------------------------------------------
-# CHAT WEBSOCKET
+# CHAT WEBSOCKET (Markdown-aware transcript)
 # ------------------------------------------------------------
 
 conversations = {}
 
 @app.websocket("/ws/chat")
-async def websocket_chat(ws: WebSocket):
+async def chat_ws(ws: WebSocket):
     await ws.accept()
+    session_id = str(uuid.uuid4())
+    conversations[session_id] = []
 
     try:
+        await ws.send_json({"session": session_id, "reply": "Connected. Ask me anything in chat mode."})
+
         while True:
-            data = await ws.receive_json()
-            session_id = data.get("session")
-            text = data.get("text", "").strip()
+            data = await ws.receive_text()
+            try:
+                msg = json.loads(data)
+            except json.JSONDecodeError:
+                await ws.send_json({"session": session_id, "reply": "Invalid message format."})
+                continue
 
-            if not session_id:
-                session_id = str(uuid.uuid4())
+            text = msg.get("text", "").strip()
+            if not text:
+                await ws.send_json({"session": session_id, "reply": ""})
+                continue
 
-            if session_id not in conversations:
-                conversations[session_id] = []
-
+            # Store conversation
             conversations[session_id].append({"role": "user", "content": text})
 
-            transcript = ""
-            for msg in conversations[session_id]:
-                transcript += f"{msg['role'].capitalize()}: {msg['content']}\n"
+            # Build Markdown-aware transcript
+            transcript = "Respond using clean, well-structured Markdown with headings, lists, and code blocks when appropriate.\n\n"
+            for m in conversations[session_id]:
+                transcript += f"{m['role'].capitalize()}: {m['content']}\n"
             transcript += "Assistant:"
 
-            response = requests.post(
-                f"{config['ollama']['url']}/api/generate",
-                json={
-                    "model": config["ollama"]["model"],
-                    "prompt": transcript,
-                    "stream": False
-                }
-            ).json()
+            payload = {
+                "model": config["ollama"]["model"],
+                "prompt": transcript,
+                "stream": False
+            }
 
-            reply = response.get("response", "").strip()
+            try:
+                r = requests.post(
+                    f"{config['ollama']['url']}/api/generate",
+                    json=payload
+                )
+                print("OLLAMA CHAT RAW RESPONSE:", r.text)
+                resp = r.json()
+                reply = resp.get("response", "")
 
-            conversations[session_id].append({"role": "assistant", "content": reply})
+                conversations[session_id].append({"role": "assistant", "content": reply})
 
-            await ws.send_json({
-                "session": session_id,
-                "reply": reply
-            })
+                await ws.send_json({"session": session_id, "reply": reply})
+
+            except Exception as e:
+                print("ERROR in /ws/chat:", e)
+                await ws.send_json({"session": session_id, "reply": "Error contacting model."})
 
     except WebSocketDisconnect:
         print("WebSocket disconnected")
+    finally:
+        conversations.pop(session_id, None)
