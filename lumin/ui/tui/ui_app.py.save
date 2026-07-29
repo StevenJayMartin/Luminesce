@@ -12,50 +12,33 @@ from textual.containers import Container, VerticalScroll
 
 from lumin.core.ollama_client import OllamaChat
 from lumin.voice.stt import SpeechRecognizer
+
 from lumin.tools.registry import get as get_tool
-from lumin.tools.router import route_intent
+
 
 log = logging.getLogger("lumin-ui")
 
 SYSTEM_PROMPT = """
-You MUST NOT call tools directly.
+You are Lumin, a local assistant.
 
-Instead, you MUST output ONLY a JSON object describing your intent.
-
-STRICT RULES:
-- The ENTIRE assistant message MUST be ONLY the JSON object.
-- NO markdown fences.
-- NO backticks.
-- NO commentary before or after the JSON.
-- NO text outside the JSON.
-- NO code blocks.
-- NO explanations.
-- You MUST preserve all spaces inside string values exactly as the user typed them.
-- You MUST NOT concatenate words inside string values.
-- Location values MUST be emitted exactly as the user typed them, without modification.
-- When extracting a location from the user’s message, you MUST copy it verbatim from the user input.
-
-FORMAT:
-{
-  "intent": "<intent>",
-  ...additional fields...
-}
-
-INTENT RULES:
-- For weather questions, use: { "intent": "weather", "location": "<place>" }
-- For search queries, use: { "intent": "search", "query": "<query>" }
-- For knowledge/concepts, use: { "intent": "knowledge", "topic": "<topic>" }
-- To discover tools, use: { "intent": "list_tools" }
-
-After tool results are returned, you MUST answer the user's question using the tool data.
+- When you need external information, you may call tools.
+- When you call a tool, you must emit a JSON object with a top-level "tool_call" key.
+- Never wrap JSON in markdown.
+- Only output the JSON object when calling a tool.
+- After the tool result is returned, integrate it into a natural language answer.
 """
 
-
+# ---------------------------------------------------------
+# Helper: Render collapsed tool-call block
+# ---------------------------------------------------------
 def render_tool_call_block(tool_name, args_dict):
     args_str = ", ".join(f'{k}="{v}"' for k, v in args_dict.items())
     return f"\n🔧 Tool Call:\n• {tool_name}({args_str})\n\n"
 
 
+# ---------------------------------------------------------
+# Main TUI App
+# ---------------------------------------------------------
 class LuminApp(App):
     ENABLE_STDOUT = True
     BINDINGS = [
@@ -158,82 +141,44 @@ class LuminApp(App):
             self.append_chat(f"Error: {e}\n")
 
     # ---------------------------------------------------------
-    # Tool Execution
+    # DuckDuckGo Tool
     # ---------------------------------------------------------
-    def _execute_tool(self, name, args):
-        tool = get_tool(name)
-        if not tool:
-            return {"error": f"Unknown tool '{name}'"}
-
+    async def _call_duckduckgo(self, query: str):
         try:
-            return tool(**args)
+            resp = requests.post(
+                "http://localhost:8000/tools/duckduckgo_search",
+                json={"query": query},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json().get("results", [])
         except Exception as e:
-            return {"error": str(e)}
+            log.error(f"TUI: DuckDuckGo call failed: {e}")
+            return []
+
+    def _format_duck_results_block(self, results):
+        if not results:
+            return "🔎 DuckDuckGo Search Results:\n• [no results]\n"
+
+        lines = ["🔎 DuckDuckGo Search Results:"]
+        for r in results:
+            title = r.get("title", "").strip()
+            snippet = r.get("snippet", "").strip()
+            lines.append(f"• {title} — {snippet}")
+        return "\n".join(lines) + "\n"
 
     # ---------------------------------------------------------
-    # Tool Result Formatting
+    # Continuation Step
     # ---------------------------------------------------------
-    def _format_tool_results(self, tool_name, results):
-
-        if tool_name == "weather_api":
-            if "error" in results:
-                return f"🌦 Weather Error: {results['error']}\n\n"
-
-            return (
-                "🌦 Current Weather:\n"
-                f"• Location: {results.get('location', '')}\n"
-                f"• Temperature: {results.get('temperature_c', '')}°C\n"
-                f"• Wind Speed: {results.get('windspeed', '')} m/s\n"
-                f"• Weather Code: {results.get('weathercode', '')}\n"
-                f"• Time: {results.get('time', '')}\n\n"
-            )
-
-        if tool_name == "wikipedia_search":
-            return (
-                "📘 Wikipedia Summary:\n"
-                f"• Title: {results.get('title', '')}\n"
-                f"• Description: {results.get('description', '')}\n"
-                f"• Extract: {results.get('extract', '')}\n"
-                f"• URL: {results.get('url', '')}\n\n"
-            )
-
-        if tool_name == "duckduckgo_search":
-            if not isinstance(results, list):
-                return "🔎 DuckDuckGo Search Results:\n• [invalid result format]\n"
-            if not results:
-                return "🔎 DuckDuckGo Search Results:\n• [no results]\n"
-            lines = ["🔎 DuckDuckGo Search Results:"]
-            for r in results:
-                title = r.get("title", "").strip()
-                snippet = r.get("snippet", "").strip()
-                lines.append(f"• {title} — {snippet}")
-            return "\n".join(lines) + "\n\n"
-
-        if tool_name == "list_tools":
-            tools = results.get("tools", [])
-            if not tools:
-                return "🧰 Available Tools:\n• [no tools registered]\n\n"
-            lines = ["🧰 Available Tools:"]
-            for t in tools:
-                name = t.get("name", "")
-                desc = t.get("description", "")
-                lines.append(f"• {name} — {desc}")
-            return "\n".join(lines) + "\n\n"
-
-        return f"[Tool '{tool_name}' returned: {results}]\n\n"
-
-    # ---------------------------------------------------------
-    # LLM Continuation After Tool Results
-    # ---------------------------------------------------------
-    async def _continue_llm_with_tool_results(self, tool_name, results):
+    async def _continue_llm_with_results(self, results):
+        block = self._format_duck_results_block(results)
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {
                 "role": "user",
                 "content": (
-                    f"Tool '{tool_name}' returned the following data:\n"
-                    f"{json.dumps(results, indent=2)}\n\n"
-                    "Please answer the user's question using this information."
+                    f"Here are search results:\n{block}\n"
+                    "Please answer based on these."
                 ),
             },
         ]
@@ -243,6 +188,16 @@ class LuminApp(App):
         response_parts = []
 
         def on_token(token: str):
+            # Filter hallucinated metadata
+            if (
+                "edge_all_open_tabs" in token
+                or "WebsiteContent_" in token
+                or "User's Edge browser tabs metadata" in token
+                or "The edge_all_open_tabs metadata provides" in token
+            ):
+                log.debug(f"[Filtered Edge Metadata] {token}")
+                return
+
             response_parts.append(token)
             self.append_chat(token)
 
@@ -268,6 +223,20 @@ class LuminApp(App):
     # ---------------------------------------------------------
     # Main LLM Streaming
     # ---------------------------------------------------------
+
+    #- moved to top from lumin.tools.registry import get as get_tool
+
+    def _execute_tool(self, name, args):
+        tool = get_tool(name)
+        if not tool:
+            return {"error": f"Unknown tool '{name}'"}
+
+        try:
+            return tool(**args)
+        except Exception as e:
+            return {"error": str(e)}
+
+    
     async def _stream_llm(self, text: str):
         log.debug(f"TUI: _stream_llm called with text='{text}'")
 
@@ -280,12 +249,11 @@ class LuminApp(App):
         json_buffer = ""
         json_mode = False
         tool_json = None
-        intent_json = None
 
         self.append_chat("Lumin: ")
 
         def on_token(token: str):
-            nonlocal json_buffer, json_mode, tool_json, intent_json
+            nonlocal json_buffer, json_mode, tool_json
 
             log.debug(f"TUI: on_token received: '{token}'")
 
@@ -296,39 +264,39 @@ class LuminApp(App):
                 or "User's Edge browser tabs metadata" in token
                 or "The edge_all_open_tabs metadata provides" in token
             ):
+                log.debug(f"[Filtered Edge Metadata] {token}")
                 return
 
+            # -----------------------------
+            # JSON CATCHER PATCH
+            # -----------------------------
             stripped = token.strip()
 
-            # JSON capture (router + legacy tool_call)
+            # Detect start of JSON
             if stripped.startswith("{") and not json_mode:
                 json_mode = True
                 json_buffer = stripped
                 return
 
+            # If inside JSON, keep buffering
             if json_mode:
                 json_buffer += stripped
+
+                # Detect end of JSON
                 if stripped.endswith("}"):
                     try:
                         parsed = json.loads(json_buffer)
-
-                        # Router JSON
-                        if "intent" in parsed:
-                            intent_json = parsed
-                            json_mode = False
-                            return
-
-                        # Legacy tool_call JSON (still supported)
                         if "tool_call" in parsed:
                             tool_json = parsed
                             json_mode = False
-                            return
-
+                            return  # stop normal streaming
                     except Exception:
-                        pass
+                        pass  # keep buffering
                 return
 
-            # Normal text
+            # -----------------------------
+            # Normal streaming
+            # -----------------------------
             response_parts.append(token)
             self.append_chat(token)
 
@@ -336,40 +304,49 @@ class LuminApp(App):
                 sys.__stdout__.write(token)
                 sys.__stdout__.flush()
 
+        # Run the LLM stream
         try:
             await asyncio.to_thread(self.llm.stream, messages, on_token)
         except Exception as e:
+            log.error(f"TUI: Exception in _stream_llm: {e}")
             fallback = f"\n[Sorry, I couldn't process that request: {e}]\n"
             self.append_chat(fallback)
-            self.chat_history.append(
-                {"role": "assistant", "content": fallback}
-            )
+            self.chat_history.append({"role": "assistant", "content": fallback})
             return
 
         # ---------------------------------------------------------
-        # Handle intent JSON via router (Option B)
+        # Handle tool_call JSON (NOW WORKS)
         # ---------------------------------------------------------
-        if self.tools_enabled and intent_json:
+        if self.tools_enabled and tool_json:
             try:
-                tool_name, tool_args = route_intent(intent_json)
+                tool_call = tool_json["tool_call"]
+                name = tool_call.get("name", "")
+                args = tool_call.get("arguments", {})
 
-                # Show intent block
-                block = render_tool_call_block(tool_name, tool_args)
+                # Show collapsed block
+                block = render_tool_call_block(name, args)
                 self.append_chat(block)
 
-                # Execute tool
-                tool_results = self._execute_tool(tool_name, tool_args)
+                # Execute tool via registry
+                query = args.get("query", text)
+                tool_result = self._execute_tool(name, args)
 
-                # Format results
-                results_block = self._format_tool_results(tool_name, tool_results)
+                # Fallback to DuckDuckGo
+                if isinstance(tool_result, dict) and "error" in tool_result:
+                    duck_results = await self._call_duckduckgo(query)
+                else:
+                    duck_results = tool_result
+
+                # Show results
+                results_block = self._format_duck_results_block(duck_results)
                 self.append_chat(results_block)
 
                 # Continue LLM
-                await self._continue_llm_with_tool_results(tool_name, tool_results)
+                await self._continue_llm_with_results(duck_results)
                 return
 
             except Exception as e:
-                log.error(f"Router failed: {e}")
+                log.error(f"Failed to handle tool_call JSON: {e}")
 
         # ---------------------------------------------------------
         # Normal assistant response
@@ -380,16 +357,12 @@ class LuminApp(App):
                 "and listening.]\n"
             )
             self.append_chat(fallback)
-            self.chat_history.append(
-                {"role": "assistant", "content": fallback}
-            )
+            self.chat_history.append({"role": "assistant", "content": fallback})
             return
 
         full_response = "".join(response_parts).strip()
         self.append_chat("\n")
-        self.chat_history.append(
-            {"role": "assistant", "content": full_response}
-        )
+        self.chat_history.append({"role": "assistant", "content": full_response})
 
         if self.tts_enabled and full_response:
             threading.Thread(
@@ -397,6 +370,8 @@ class LuminApp(App):
                 args=(full_response,),
                 daemon=True,
             ).start()
+
+    #########
 
     # ---------------------------------------------------------
     # Wake Word Loop
