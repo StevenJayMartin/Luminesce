@@ -10,7 +10,7 @@ def web_search(query: str) -> str:
     """
     url = "https://api.duckduckgo.com/"
     params = {
-        "q": urllib.parse.quote_plus(query),   # <-- FIXED: preserves spaces
+        "q": urllib.parse.quote_plus(query),   # <-- preserves spaces
         "format": "json",
         "no_redirect": 1,
         "no_html": 1,
@@ -33,8 +33,3 @@ def web_search(query: str) -> str:
             return item["Text"]
 
     return "No results found from DuckDuckGo."
-
-
-# Register this tool with the global registry
-from lumin.tools.registry import register
-register("web_search", web_search)

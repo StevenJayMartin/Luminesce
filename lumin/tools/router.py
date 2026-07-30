@@ -17,7 +17,7 @@ def route_intent(intent_json):
             "location": intent_json.get("location", "")
         }
 
-    # SEARCH  (FIXED: now uses web_search)
+    # SEARCH (now uses web_search)
     if intent == "search":
         return "web_search", {
             "query": intent_json.get("query", "")
