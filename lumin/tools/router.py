@@ -1,3 +1,5 @@
+# lumin/tools/router.py
+
 def route_intent(intent_json):
     """
     Decide which tool to call based on the LLM's intent JSON.
@@ -15,9 +17,9 @@ def route_intent(intent_json):
             "location": intent_json.get("location", "")
         }
 
-    # SEARCH
+    # SEARCH  (FIXED: now uses web_search)
     if intent == "search":
-        return "duckduckgo_search", {
+        return "web_search", {
             "query": intent_json.get("query", "")
         }
 
@@ -29,4 +31,3 @@ def route_intent(intent_json):
 
     # FALLBACK
     return None, {"error": f"Unknown intent '{intent}'"}
-

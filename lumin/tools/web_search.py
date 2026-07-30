@@ -1,5 +1,7 @@
 # lumin/tools/web_search.py
+
 import requests
+import urllib.parse
 
 def web_search(query: str) -> str:
     """
@@ -8,7 +10,7 @@ def web_search(query: str) -> str:
     """
     url = "https://api.duckduckgo.com/"
     params = {
-        "q": query,
+        "q": urllib.parse.quote_plus(query),   # <-- FIXED: preserves spaces
         "format": "json",
         "no_redirect": 1,
         "no_html": 1,
