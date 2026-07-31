@@ -1,10 +1,11 @@
+# lumin/ui/tui/ui_app.py
+
 import asyncio
 import threading
 import time
 import json
 import sys
 import logging
-import requests
 
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, TextArea, Input, Button
@@ -12,43 +13,11 @@ from textual.containers import Container, VerticalScroll
 
 from lumin.core.ollama_client import OllamaChat
 from lumin.voice.stt import SpeechRecognizer
-from lumin.tools.registry import get as get_tool
+from lumin.tools.registry import get as get_tool, list_tools
 from lumin.tools.router import route_intent
+from lumin.tools.prompts import INTENT_SYSTEM_PROMPT, TOOL_PROMPTS, DEFAULT_TOOL_PROMPT
 
 log = logging.getLogger("lumin-ui")
-
-SYSTEM_PROMPT = """
-You MUST NOT call tools directly.
-
-Instead, you MUST output ONLY a JSON object describing your intent.
-
-STRICT RULES:
-- The ENTIRE assistant message MUST be ONLY the JSON object.
-- NO markdown fences.
-- NO backticks.
-- NO commentary before or after the JSON.
-- NO text outside the JSON.
-- NO code blocks.
-- NO explanations.
-- You MUST preserve all spaces inside string values exactly as the user typed them.
-- You MUST NOT concatenate words inside string values.
-- Location values MUST be emitted exactly as the user typed them, without modification.
-- When extracting a location from the user’s message, you MUST copy it verbatim from the user input.
-
-FORMAT:
-{
-  "intent": "<intent>",
-  ...additional fields...
-}
-
-INTENT RULES:
-- For weather questions, use: { "intent": "weather", "location": "<place>" }
-- For search queries, use: { "intent": "search", "query": "<query>" }
-- For knowledge/concepts, use: { "intent": "knowledge", "topic": "<topic>" }
-- To discover tools, use: { "intent": "list_tools" }
-
-After tool results are returned, you MUST answer the user's question using the tool data.
-"""
 
 
 def render_tool_call_block(tool_name, args_dict):
@@ -93,9 +62,6 @@ class LuminApp(App):
         self.chat_history = []
         self._stop_flag = False
 
-    # ---------------------------------------------------------
-    # UI Helpers
-    # ---------------------------------------------------------
     def append_chat(self, text: str):
         end = len(self.chat_area.text)
         self.chat_area.cursor_position = end
@@ -140,9 +106,6 @@ class LuminApp(App):
     def _volume_callback_safe(self, level: float):
         pass
 
-    # ---------------------------------------------------------
-    # Input Submission
-    # ---------------------------------------------------------
     async def on_input_submitted(self, message: Input.Submitted) -> None:
         user_text = message.value.strip()
         if not user_text:
@@ -157,22 +120,28 @@ class LuminApp(App):
         except Exception as e:
             self.append_chat(f"Error: {e}\n")
 
-    # ---------------------------------------------------------
-    # Tool Execution
-    # ---------------------------------------------------------
     def _execute_tool(self, name, args):
+        if name == "list_tools":
+            return {"tools": list_tools()}
+
         tool = get_tool(name)
         if not tool:
             return {"error": f"Unknown tool '{name}'"}
+
+        if name == "weather_api" and not args.get("location"):
+            return {"error": "Missing 'location' for weather_api"}
+
+        if name == "web_search" and not args.get("query"):
+            return {"error": "Missing 'query' for web_search"}
+
+        if name == "wikipedia_search" and not args.get("topic"):
+            return {"error": "Missing 'topic' for wikipedia_search"}
 
         try:
             return tool(**args)
         except Exception as e:
             return {"error": str(e)}
 
-    # ---------------------------------------------------------
-    # Tool Result Formatting
-    # ---------------------------------------------------------
     def _format_tool_results(self, tool_name, results):
 
         if tool_name == "weather_api":
@@ -189,6 +158,8 @@ class LuminApp(App):
             )
 
         if tool_name == "wikipedia_search":
+            if "error" in results:
+                return f"📘 Wikipedia Error: {results['error']}\n\n"
             return (
                 "📘 Wikipedia Summary:\n"
                 f"• Title: {results.get('title', '')}\n"
@@ -197,17 +168,10 @@ class LuminApp(App):
                 f"• URL: {results.get('url', '')}\n\n"
             )
 
-        if tool_name == "duckduckgo_search":
-            if not isinstance(results, list):
-                return "🔎 DuckDuckGo Search Results:\n• [invalid result format]\n"
-            if not results:
-                return "🔎 DuckDuckGo Search Results:\n• [no results]\n"
-            lines = ["🔎 DuckDuckGo Search Results:"]
-            for r in results:
-                title = r.get("title", "").strip()
-                snippet = r.get("snippet", "").strip()
-                lines.append(f"• {title} — {snippet}")
-            return "\n".join(lines) + "\n\n"
+        if tool_name == "web_search":
+            if isinstance(results, str):
+                return f"🔎 Web Search:\n{results}\n\n"
+            return f"🔎 Web Search:\n{results}\n\n"
 
         if tool_name == "list_tools":
             tools = results.get("tools", [])
@@ -222,12 +186,11 @@ class LuminApp(App):
 
         return f"[Tool '{tool_name}' returned: {results}]\n\n"
 
-    # ---------------------------------------------------------
-    # LLM Continuation After Tool Results
-    # ---------------------------------------------------------
     async def _continue_llm_with_tool_results(self, tool_name, results):
+        tool_prompt = TOOL_PROMPTS.get(tool_name, DEFAULT_TOOL_PROMPT)
+
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": tool_prompt},
             {
                 "role": "user",
                 "content": (
@@ -265,31 +228,30 @@ class LuminApp(App):
                 daemon=True,
             ).start()
 
-    # ---------------------------------------------------------
-    # Main LLM Streaming
-    # ---------------------------------------------------------
     async def _stream_llm(self, text: str):
         log.debug(f"TUI: _stream_llm called with text='{text}'")
 
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": INTENT_SYSTEM_PROMPT},
             {"role": "user", "content": text},
         ]
 
         response_parts = []
         json_buffer = ""
         json_mode = False
-        tool_json = None
         intent_json = None
 
         self.append_chat("Lumin: ")
 
         def on_token(token: str):
-            nonlocal json_buffer, json_mode, tool_json, intent_json
+            nonlocal json_buffer, json_mode, intent_json
 
             log.debug(f"TUI: on_token received: '{token}'")
+            stripped = token.strip()
 
-            # Filter hallucinated metadata
+            if stripped in ("```", "json"):
+                return
+
             if (
                 "edge_all_open_tabs" in token
                 or "WebsiteContent_" in token
@@ -298,9 +260,6 @@ class LuminApp(App):
             ):
                 return
 
-            stripped = token.strip()
-
-            # JSON capture (router + legacy tool_call)
             if stripped.startswith("{") and not json_mode:
                 json_mode = True
                 json_buffer = stripped
@@ -311,24 +270,14 @@ class LuminApp(App):
                 if stripped.endswith("}"):
                     try:
                         parsed = json.loads(json_buffer)
-
-                        # Router JSON
-                        if "intent" in parsed:
+                        if isinstance(parsed, dict) and "intent" in parsed:
                             intent_json = parsed
                             json_mode = False
-                            return
-
-                        # Legacy tool_call JSON (still supported)
-                        if "tool_call" in parsed:
-                            tool_json = parsed
-                            json_mode = False
-                            return
-
+                            raise StopIteration
                     except Exception:
                         pass
                 return
 
-            # Normal text
             response_parts.append(token)
             self.append_chat(token)
 
@@ -338,6 +287,8 @@ class LuminApp(App):
 
         try:
             await asyncio.to_thread(self.llm.stream, messages, on_token)
+        except StopIteration:
+            pass
         except Exception as e:
             fallback = f"\n[Sorry, I couldn't process that request: {e}]\n"
             self.append_chat(fallback)
@@ -346,34 +297,24 @@ class LuminApp(App):
             )
             return
 
-        # ---------------------------------------------------------
-        # Handle intent JSON via router (Option B)
-        # ---------------------------------------------------------
         if self.tools_enabled and intent_json:
             try:
                 tool_name, tool_args = route_intent(intent_json)
 
-                # Show intent block
                 block = render_tool_call_block(tool_name, tool_args)
                 self.append_chat(block)
 
-                # Execute tool
                 tool_results = self._execute_tool(tool_name, tool_args)
 
-                # Format results
                 results_block = self._format_tool_results(tool_name, tool_results)
                 self.append_chat(results_block)
 
-                # Continue LLM
                 await self._continue_llm_with_tool_results(tool_name, tool_results)
                 return
 
             except Exception as e:
                 log.error(f"Router failed: {e}")
 
-        # ---------------------------------------------------------
-        # Normal assistant response
-        # ---------------------------------------------------------
         if not response_parts:
             fallback = (
                 "\n[I'm not sure how to answer that, but I'm still here "
@@ -398,9 +339,6 @@ class LuminApp(App):
                 daemon=True,
             ).start()
 
-    # ---------------------------------------------------------
-    # Wake Word Loop
-    # ---------------------------------------------------------
     def _always_listen_loop(self):
         while not self._stop_flag:
             time.sleep(0.1)
@@ -429,9 +367,6 @@ class LuminApp(App):
         except Exception:
             return ""
 
-    # ---------------------------------------------------------
-    # STT Cycle
-    # ---------------------------------------------------------
     def _run_stt_cycle(self):
         self.listening = True
 
@@ -462,9 +397,6 @@ class LuminApp(App):
             lambda: self.run_worker(self._stream_llm(text))
         )
 
-    # ---------------------------------------------------------
-    # Exit
-    # ---------------------------------------------------------
     def on_exit(self):
         self._stop_flag = True
         self.tts.stop()

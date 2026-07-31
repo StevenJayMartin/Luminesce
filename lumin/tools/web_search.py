@@ -10,7 +10,7 @@ def web_search(query: str) -> str:
     """
     url = "https://api.duckduckgo.com/"
     params = {
-        "q": urllib.parse.quote_plus(query),   # <-- preserves spaces
+        "q": urllib.parse.quote_plus(query),
         "format": "json",
         "no_redirect": 1,
         "no_html": 1,
