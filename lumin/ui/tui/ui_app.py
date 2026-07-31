@@ -57,7 +57,7 @@ class LuminApp(App):
         self.always_listen = (voice_cfg.get("listen_mode") == "always")
         self.tts_enabled = config.get("tts", {}).get("enabled", True)
         self.stream_to_terminal = ui_cfg.get("stream_to_terminal", True)
-        self.tools_enabled = tools_cfg.get("enabled", False)
+        self.tools_enabled = tools_cfg.get("enabled", True)
 
         self.chat_history = []
         self._stop_flag = False
@@ -147,14 +147,9 @@ class LuminApp(App):
         if tool_name == "weather_api":
             if "error" in results:
                 return f"🌦 Weather Error: {results['error']}\n\n"
-
             return (
-                "🌦 Current Weather:\n"
-                f"• Location: {results.get('location', '')}\n"
-                f"• Temperature: {results.get('temperature_c', '')}°C\n"
-                f"• Wind Speed: {results.get('windspeed', '')} m/s\n"
-                f"• Weather Code: {results.get('weathercode', '')}\n"
-                f"• Time: {results.get('time', '')}\n\n"
+                "🌦 Weather Raw Data:\n"
+                f"{json.dumps(results, indent=2)}\n\n"
             )
 
         if tool_name == "wikipedia_search":
