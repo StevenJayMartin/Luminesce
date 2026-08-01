@@ -6,6 +6,7 @@ import time
 import json
 import sys
 import logging
+import os
 
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, TextArea, Input, Button
@@ -18,6 +19,13 @@ from lumin.tools.router import route_intent
 from lumin.tools.prompts import INTENT_SYSTEM_PROMPT, TOOL_PROMPTS, DEFAULT_TOOL_PROMPT
 
 log = logging.getLogger("lumin-ui")
+
+
+# -----------------------------
+# Persistence paths
+# -----------------------------
+STATE_DIR = "lumin/state"
+CHAT_HISTORY_FILE = os.path.join(STATE_DIR, "chat.json")
 
 
 def render_tool_call_block(tool_name, args_dict):
@@ -62,6 +70,39 @@ class LuminApp(App):
         self.chat_history = []
         self._stop_flag = False
 
+        os.makedirs(STATE_DIR, exist_ok=True)
+
+    # -----------------------------
+    # Persistence helpers
+    # -----------------------------
+    def _load_chat_history(self):
+        try:
+            if os.path.exists(CHAT_HISTORY_FILE):
+                with open(CHAT_HISTORY_FILE, "r", encoding="utf-8") as f:
+                    self.chat_history = json.load(f)
+                log.info("Chat history loaded.")
+            else:
+                self.chat_history = []
+        except Exception as e:
+            log.error(f"Failed to load chat history: {e}")
+            self.chat_history = []
+
+    def _render_chat_history(self):
+        for msg in self.chat_history:
+            role = "You" if msg["role"] == "user" else "Lumin"
+            self.append_chat(f"{role}: {msg['content']}\n")
+
+    def _save_chat_history(self):
+        try:
+            with open(CHAT_HISTORY_FILE, "w", encoding="utf-8") as f:
+                json.dump(self.chat_history, f, indent=2)
+            log.info("Chat history saved.")
+        except Exception as e:
+            log.error(f"Failed to save chat history: {e}")
+
+    # -----------------------------
+    # UI / TUI setup
+    # -----------------------------
     def append_chat(self, text: str):
         end = len(self.chat_area.text)
         self.chat_area.cursor_position = end
@@ -88,6 +129,9 @@ class LuminApp(App):
 
     async def on_mount(self) -> None:
         self.append_chat("Connected to Lumin\n")
+
+        self._load_chat_history()
+        self._render_chat_history()
 
         if self.always_listen:
             threading.Thread(
@@ -120,6 +164,9 @@ class LuminApp(App):
         except Exception as e:
             self.append_chat(f"Error: {e}\n")
 
+    # -----------------------------
+    # Tool execution
+    # -----------------------------
     def _execute_tool(self, name, args):
         if name == "list_tools":
             return {"tools": list_tools()}
@@ -179,8 +226,14 @@ class LuminApp(App):
                 lines.append(f"• {name} — {desc}")
             return "\n".join(lines) + "\n\n"
 
+        if tool_name == "chat_tool":
+            return f"💬 Small Talk:\n{results.get('response', '')}\n\n"
+
         return f"[Tool '{tool_name}' returned: {results}]\n\n"
 
+    # -----------------------------
+    # Continuation prompt
+    # -----------------------------
     async def _continue_llm_with_tool_results(self, tool_name, results):
         tool_prompt = TOOL_PROMPTS.get(tool_name, DEFAULT_TOOL_PROMPT)
 
@@ -223,6 +276,9 @@ class LuminApp(App):
                 daemon=True,
             ).start()
 
+    # -----------------------------
+    # Intent extraction + tool routing
+    # -----------------------------
     async def _stream_llm(self, text: str):
         log.debug(f"TUI: _stream_llm called with text='{text}'")
 
@@ -258,10 +314,17 @@ class LuminApp(App):
             if stripped.startswith("{") and not json_mode:
                 json_mode = True
                 json_buffer = stripped
+
+                response_parts.append(token)
+                self.append_chat(token)
                 return
 
             if json_mode:
                 json_buffer += stripped
+
+                response_parts.append(token)
+                self.append_chat(token)
+
                 if stripped.endswith("}"):
                     try:
                         parsed = json.loads(json_buffer)
@@ -334,6 +397,9 @@ class LuminApp(App):
                 daemon=True,
             ).start()
 
+    # -----------------------------
+    # Wake-word + STT loop
+    # -----------------------------
     def _always_listen_loop(self):
         while not self._stop_flag:
             time.sleep(0.1)
@@ -392,6 +458,10 @@ class LuminApp(App):
             lambda: self.run_worker(self._stream_llm(text))
         )
 
+    # -----------------------------
+    # Exit handler
+    # -----------------------------
     def on_exit(self):
         self._stop_flag = True
+        self._save_chat_history()
         self.tts.stop()
