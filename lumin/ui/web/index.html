@@ -5,7 +5,6 @@
 <title>Lumin Assistant</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<!-- Markdown + syntax highlighting -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github-dark.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
@@ -32,6 +31,30 @@
         flex-direction: column;
         height: 100vh;
         overflow: hidden;
+    }
+
+    #model-bar {
+        padding: 10px;
+        border-bottom: 1px solid var(--border-subtle);
+        background: #0b1120;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 14px;
+    }
+
+    #model-picker {
+        background: #1f2937;
+        color: var(--fg);
+        border: 1px solid var(--border-subtle);
+        padding: 6px;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+
+    #model-info {
+        opacity: 0.8;
+        font-size: 13px;
     }
 
     #chat-container {
@@ -106,25 +129,6 @@
         margin-right: auto;
     }
 
-    .assistant h1,
-    .assistant h2,
-    .assistant h3 {
-        margin: 0.4em 0 0.2em;
-    }
-
-    .assistant ul {
-        padding-left: 1.2em;
-        margin: 0.2em 0;
-    }
-
-    .assistant code {
-        background: #0b1120;
-        padding: 2px 4px;
-        border-radius: 4px;
-        font-family: Consolas, monospace;
-        font-size: 0.9em;
-    }
-
     .assistant pre {
         background: #0b1120;
         padding: 10px;
@@ -156,20 +160,19 @@
         from { opacity: 0; transform: translateY(6px); }
         to { opacity: 1; transform: translateY(0); }
     }
-
-    @media (max-width: 600px) {
-        .msg {
-            max-width: 95%;
-            font-size: 15px;
-        }
-        #chat-container {
-            padding: 12px;
-        }
-    }
 </style>
 </head>
 
 <body>
+
+<div id="model-bar">
+    <div>
+        <strong>Model:</strong>
+        <select id="model-picker"></select>
+    </div>
+    <div id="model-info">Loading model info…</div>
+</div>
+
 <div id="chat-container"></div>
 
 <div id="input-bar">
@@ -180,9 +183,10 @@
 <script>
 let config = null;
 let configLoaded = false;
-
 let ws = null;
+let wsConnecting = false;   // ⭐ NEW
 let session = null;
+let models = [];
 
 function renderMarkdown(text) {
     const html = marked.parse(text);
@@ -195,9 +199,7 @@ function renderMarkdown(text) {
         const btn = document.createElement("button");
         btn.textContent = "Copy";
         btn.className = "copy-btn";
-        btn.onclick = () => {
-            navigator.clipboard.writeText(block.innerText);
-        };
+        btn.onclick = () => navigator.clipboard.writeText(block.innerText);
         pre.appendChild(btn);
     });
 
@@ -205,22 +207,17 @@ function renderMarkdown(text) {
 }
 
 function addMessage(role, text, reuseDiv = null) {
-    let div = reuseDiv;
-    if (!div) {
-        div = document.createElement("div");
-        div.className = `msg ${role}`;
-        document.getElementById("chat-container").appendChild(div);
-    }
-
+    let div = reuseDiv || document.createElement("div");
+    div.className = `msg ${role}`;
     div.innerHTML = renderMarkdown(text);
+    if (!reuseDiv) document.getElementById("chat-container").appendChild(div);
     div.scrollIntoView({ behavior: "smooth" });
     return div;
 }
 
 function showTyping() {
-    let t = document.getElementById("typing");
-    if (!t) {
-        t = document.createElement("div");
+    if (!document.getElementById("typing")) {
+        const t = document.createElement("div");
         t.id = "typing";
         t.className = "msg assistant";
         t.textContent = "Lumin is thinking…";
@@ -234,22 +231,82 @@ function hideTyping() {
     if (t) t.remove();
 }
 
-async function loadConfig() {
-    config = await fetch("/config").then(r => r.json());
-    console.log("WEB UI MODE:", config.ollama.mode);
-    configLoaded = true;
+async function loadModels() {
+    try {
+        const resp = await fetch("/api/models").then(r => r.json());
+        models = resp.models || [];
+        const sel = document.getElementById("model-picker");
+        sel.innerHTML = "";
 
-    if (config.ollama.mode === "chat") {
-        connectWS();
+        models.forEach(m => {
+            const opt = document.createElement("option");
+            opt.value = m;
+            opt.textContent = m;
+            if (config.ollama.model === m) opt.selected = true;
+            sel.appendChild(opt);
+        });
+
+        sel.onchange = async () => {
+            const chosen = sel.value;
+            const res = await fetch("/api/set-model", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model: chosen })
+            }).then(r => r.json());
+
+            if (res.ok) {
+                config.ollama.model = chosen;
+                await refreshModelInfo();
+                if (ws) ws.close();
+            }
+        };
+    } catch (e) {
+        console.error("loadModels error:", e);
     }
 }
 
+async function refreshModelInfo() {
+    try {
+        const info = await fetch("/api/model-info").then(r => r.json());
+        const div = document.getElementById("model-info");
+
+        let text = `Model: ${info.model}`;
+        if (info.gpu) {
+            text += ` | GPU: ${info.gpu.name} ${info.gpu.memory_used}/${info.gpu.memory_total} (${info.gpu.utilization}, ${info.gpu.temperature})`;
+        }
+        div.textContent = text;
+    } catch (e) {
+        console.error("refreshModelInfo error:", e);
+    }
+}
+
+async function loadConfig() {
+    if (configLoaded) return;   // ⭐ NEW GUARD
+    configLoaded = true;
+
+    config = await fetch("/config").then(r => r.json());
+
+    await loadModels();
+    await refreshModelInfo();
+    setInterval(refreshModelInfo, 10000);
+
+    if (config.ollama.mode === "chat") connectWS();
+}
+
 function connectWS() {
+    if (wsConnecting) return;   // ⭐ NEW GUARD
+    wsConnecting = true;
+
     ws = new WebSocket(`ws://${location.host}/ws/chat`);
 
-    ws.onopen = () => console.log("WS connected");
+    ws.onopen = () => {
+        console.log("WS connected");
+        wsConnecting = false;
+    };
+
     ws.onclose = () => {
         console.log("WS closed, retrying...");
+        wsConnecting = false;
         setTimeout(connectWS, 1000);
     };
 
@@ -265,15 +322,14 @@ function connectWS() {
 
         if (!isStream) {
             hideTyping();
-            if (!chunk) return;
-            currentAssistantDiv = addMessage("assistant", chunk);
+            if (chunk) currentAssistantDiv = addMessage("assistant", chunk);
             accumulated = "";
             return;
         }
 
-        // streaming chunk
         showTyping();
         accumulated += chunk;
+
         if (!currentAssistantDiv) {
             currentAssistantDiv = addMessage("assistant", accumulated);
         } else {
@@ -295,10 +351,7 @@ async function sendGenerate(text) {
 }
 
 document.getElementById("send").onclick = () => {
-    if (!configLoaded) {
-        console.warn("Config not loaded yet");
-        return;
-    }
+    if (!configLoaded) return;
 
     const text = document.getElementById("input").value.trim();
     if (!text) return;

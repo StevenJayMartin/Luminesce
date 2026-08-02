@@ -2,6 +2,7 @@ import os
 import json
 import uuid
 import requests
+import subprocess
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -56,6 +57,75 @@ def get_config():
         },
         "ui": config["ui"]
     }
+
+@app.get("/api/models")
+def list_models():
+    try:
+        r = requests.get(f"{config['ollama']['url']}/api/tags")
+        data = r.json()
+        models = [m.get("name") for m in data.get("models", [])]
+        return {"models": models}
+    except Exception as e:
+        print("ERROR in /api/models:", e)
+        return {"models": [], "error": str(e)}
+    
+@app.get("/api/model-info")
+def model_info():
+    info = {
+        "model": config["ollama"]["model"],
+        "backend": config["ollama"]["url"],
+    }
+
+    # Ollama ps
+    try:
+        r = requests.get(f"{config['ollama']['url']}/api/ps")
+        ps = r.json()
+        info["running"] = ps.get("models", [])
+    except Exception as e:
+        info["running_error"] = str(e)
+
+    # GPU via nvidia-smi (best-effort)
+    try:
+        out = subprocess.check_output(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            stderr=subprocess.STDOUT,
+            text=True,
+        ).strip()
+        parts = [p.strip() for p in out.split(",")]
+        info["gpu"] = {
+            "name": parts[0],
+            "memory_used": parts[1] + " MiB",
+            "memory_total": parts[2] + " MiB",
+            "utilization": parts[3] + " %",
+            "temperature": parts[4] + " C",
+        }
+    except Exception as e:
+        info["gpu_error"] = str(e)
+
+    return info
+
+@app.post("/api/set-model")
+async def set_model(req: dict):
+    new_model = req.get("model")
+    if not new_model:
+        return {"ok": False, "error": "No model provided"}
+
+    # update in-memory config
+    config["ollama"]["model"] = new_model
+
+    # write back to config.json
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2)
+    except Exception as e:
+        print("ERROR writing config.json:", e)
+        return {"ok": False, "error": str(e)}
+
+    return {"ok": True, "model": new_model}    
 
 # ------------------------------------------------------------
 # SYSTEM / PERSONA PROMPT
