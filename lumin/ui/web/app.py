@@ -24,6 +24,26 @@ CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), "config.j
 with open(CONFIG_PATH, "r") as f:
     config = json.load(f)
 
+PERSONALITY_DIR = os.path.join(os.path.dirname(CONFIG_PATH), "prompts")
+
+def load_personality_prompt(model_name: str) -> str:
+    personalities = config.get("personalities", {})
+    model_map = config.get("model_personality_map", {})
+
+    personality_name = model_map.get(model_name, "default")
+    personality_path = personalities.get(personality_name)
+
+    if not personality_path:
+        return SYSTEM_PROMPT  # fallback
+
+    full_path = os.path.join(os.path.dirname(CONFIG_PATH), personality_path)
+    try:
+        with open(full_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        print(f"ERROR loading personality '{personality_name}':", e)
+        return SYSTEM_PROMPT
+
 # ------------------------------------------------------------
 # FASTAPI APP
 # ------------------------------------------------------------
@@ -57,6 +77,44 @@ def get_config():
         },
         "ui": config["ui"]
     }
+
+@app.get("/api/personalities")
+def list_personalities():
+    personalities = config.get("personalities", {})
+    model_map = config.get("model_personality_map", {})
+    current_model = config["ollama"]["model"]
+    current_personality = model_map.get(current_model, "default")
+
+    return {
+        "personalities": list(personalities.keys()),
+        "current_model": current_model,
+        "current_personality": current_personality,
+        "model_personality_map": model_map
+    }
+
+@app.post("/api/set-personality")
+async def set_personality(req: dict):
+    model_name = req.get("model") or config["ollama"]["model"]
+    personality_name = req.get("personality")
+
+    if not personality_name:
+        return {"ok": False, "error": "No personality provided"}
+
+    if "personalities" not in config or personality_name not in config["personalities"]:
+        return {"ok": False, "error": "Unknown personality"}
+
+    model_map = config.get("model_personality_map", {})
+    model_map[model_name] = personality_name
+    config["model_personality_map"] = model_map
+
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2)
+    except Exception as e:
+        print("ERROR writing config.json:", e)
+        return {"ok": False, "error": str(e)}
+
+    return {"ok": True, "model": model_name, "personality": personality_name}
 
 @app.get("/api/models")
 def list_models():
@@ -171,10 +229,13 @@ async def generate(req: dict):
     if not text:
         return {"reply": ""}
 
-    prompt = f"{SYSTEM_PROMPT.strip()}\n\nUser: {text}\nAssistant:"
+    model_name = config["ollama"]["model"]
+    personality_prompt = load_personality_prompt(model_name)
+
+    prompt = f"{personality_prompt.strip()}\n\nUser: {text}\nAssistant:"
 
     payload = {
-        "model": config["ollama"]["model"],
+        "model": model_name,
         "prompt": prompt,
         "stream": False
     }
@@ -206,31 +267,28 @@ async def chat_ws(ws: WebSocket):
     session_id = str(uuid.uuid4())
     conversations[session_id] = []
 
+    model_name = config["ollama"]["model"]
+    personality_prompt = load_personality_prompt(model_name)
+
     try:
         await ws.send_json({"session": session_id, "reply": "Connected. Ask me anything.", "stream": False})
 
         while True:
-            data = await ws.receive_text()
-            try:
-                msg = json.loads(data)
-            except json.JSONDecodeError:
-                await ws.send_json({"session": session_id, "reply": "Invalid message format.", "stream": False})
-                continue
+            # Receive JSON message from the client
+            data = await ws.receive_json()
+            text = data.get("text", "")
 
-            text = msg.get("text", "").strip()
-            if not text:
-                await ws.send_json({"session": session_id, "reply": "", "stream": False})
-                continue
-
+            # Store user message
             conversations[session_id].append({"role": "user", "content": text})
 
-            transcript = SYSTEM_PROMPT.strip() + "\n\n"
+            # Build transcript with personality prompt
+            transcript = personality_prompt.strip() + "\n\n"
             for m in conversations[session_id]:
                 transcript += f"{m['role'].capitalize()}: {m['content']}\n"
             transcript += "Assistant:"
 
             payload = {
-                "model": config["ollama"]["model"],
+                "model": model_name,
                 "prompt": transcript,
                 "stream": True
             }
@@ -243,7 +301,7 @@ async def chat_ws(ws: WebSocket):
                 )
 
                 full_reply = ""
-                # typing indicator on client side; we just stream tokens
+
                 for line in r.iter_lines():
                     if not line:
                         continue

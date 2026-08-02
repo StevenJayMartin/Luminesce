@@ -1,10 +1,22 @@
 {
   "ollama": {
     "url": "http://192.168.1.196:11434",
-    "model": "phi3:medium",
+    "model": "llama3.2",
     "mode": "chat"
   },
-
+  "personalities": {
+    "default": "prompts/default.txt",
+    "teacher": "prompts/teacher.txt",
+    "concise": "prompts/concise.txt",
+    "developer": "prompts/developer.txt",
+    "playful": "prompts/playful.txt"
+  },
+  "model_personality_map": {
+     "llama3.2": "developer",
+     "phi3:medium": "teacher",
+     "qwen2.5:7b": "concise",
+     "mistral:7b": "default"
+  },
   "voice": {
     "mic_device": 1,
     "vosk_model_path": "C:\\HOME_Scripts\\Luminesce\\lumin\\models\\vosk\\vosk-model-small-en-us-0.15",

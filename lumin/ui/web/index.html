@@ -43,7 +43,14 @@
         font-size: 14px;
     }
 
-    #model-picker {
+    #model-bar-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    #model-picker,
+    #personality-picker {
         background: #1f2937;
         color: var(--fg);
         border: 1px solid var(--border-subtle);
@@ -166,9 +173,15 @@
 <body>
 
 <div id="model-bar">
-    <div>
-        <strong>Model:</strong>
-        <select id="model-picker"></select>
+    <div id="model-bar-left">
+        <div>
+            <strong>Model:</strong>
+            <select id="model-picker"></select>
+        </div>
+        <div>
+            <strong>Personality:</strong>
+            <select id="personality-picker"></select>
+        </div>
     </div>
     <div id="model-info">Loading model info…</div>
 </div>
@@ -184,9 +197,11 @@
 let config = null;
 let configLoaded = false;
 let ws = null;
-let wsConnecting = false;   // ⭐ NEW
+let wsConnecting = false;
 let session = null;
 let models = [];
+let personalities = [];
+let currentPersonality = null;
 
 function renderMarkdown(text) {
     const html = marked.parse(text);
@@ -257,11 +272,49 @@ async function loadModels() {
             if (res.ok) {
                 config.ollama.model = chosen;
                 await refreshModelInfo();
+                await loadPersonalities(); // reload personality mapping for new model
                 if (ws) ws.close();
             }
         };
     } catch (e) {
         console.error("loadModels error:", e);
+    }
+}
+
+async function loadPersonalities() {
+    try {
+        const resp = await fetch("/api/personalities").then(r => r.json());
+        personalities = resp.personalities || [];
+        currentPersonality = resp.current_personality;
+
+        const sel = document.getElementById("personality-picker");
+        sel.innerHTML = "";
+
+        personalities.forEach(p => {
+            const opt = document.createElement("option");
+            opt.value = p;
+            opt.textContent = p;
+            if (p === currentPersonality) opt.selected = true;
+            sel.appendChild(opt);
+        });
+
+        sel.onchange = async () => {
+            const chosen = sel.value;
+            const res = await fetch("/api/set-personality", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model: config.ollama.model, personality: chosen })
+            }).then(r => r.json());
+
+            if (res.ok) {
+                currentPersonality = chosen;
+                console.log("Personality set to", chosen);
+            } else {
+                console.error("Failed to set personality:", res.error);
+            }
+        };
+    } catch (e) {
+        console.error("loadPersonalities error:", e);
     }
 }
 
@@ -281,12 +334,13 @@ async function refreshModelInfo() {
 }
 
 async function loadConfig() {
-    if (configLoaded) return;   // ⭐ NEW GUARD
+    if (configLoaded) return;
     configLoaded = true;
 
     config = await fetch("/config").then(r => r.json());
 
     await loadModels();
+    await loadPersonalities();
     await refreshModelInfo();
     setInterval(refreshModelInfo, 10000);
 
@@ -294,7 +348,7 @@ async function loadConfig() {
 }
 
 function connectWS() {
-    if (wsConnecting) return;   // ⭐ NEW GUARD
+    if (wsConnecting) return;
     wsConnecting = true;
 
     ws = new WebSocket(`ws://${location.host}/ws/chat`);
