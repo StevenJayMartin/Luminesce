@@ -5,6 +5,7 @@ websockets
 requests
 pydantic
 python-dotenv
+python-multipart
 
 # --- TUI (Textual) ---
 textual==0.50.1

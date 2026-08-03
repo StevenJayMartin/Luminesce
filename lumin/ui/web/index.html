@@ -217,6 +217,22 @@
         font-style: italic;
     }
 
+    #upload-btn {
+        padding: 10px 16px;
+        background: #1f2937;
+        color: var(--fg);
+        border: 1px solid var(--border-subtle);
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 20px;
+        margin-right: 10px;
+        transition: background 0.2s;
+    }
+
+    #upload-btn:hover {
+        background: #374151;
+    }
+
     @keyframes fadeIn {
         from { opacity: 0; transform: translateY(6px); }
         to { opacity: 1; transform: translateY(0); }
@@ -252,6 +268,8 @@
 <div id="input-bar">
     <input id="input" placeholder="Type a message...">
     <button id="send">Send</button>
+    <input id="file-input" type="file" style="display:none">
+    <button id="upload-btn">+</button>
 </div>
 
 <script>
@@ -519,10 +537,11 @@ function connectWS() {
 
         const isStream = data.stream;
         const chunk = data.reply || "";
-
+       
         if (!isStream) {
             hideTyping();
-            if (chunk) currentAssistantDiv = addMessage("assistant", chunk);
+            // Final message already rendered via accumulated updates
+            currentAssistantDiv = null;
             accumulated = "";
             return;
         }
@@ -588,6 +607,28 @@ document.getElementById("input").addEventListener("keydown", (e) => {
         document.getElementById("send").click();
     }
 });
+
+document.getElementById("upload-btn").onclick = () => {
+    document.getElementById("file-input").click();
+};
+
+document.getElementById("file-input").onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Show a bubble in chat
+    addMessage("user", `📁 Uploaded: **${file.name}**`);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const resp = await fetch("/api/upload", {
+        method: "POST",
+        body: formData
+    }).then(r => r.json());
+
+    addMessage("assistant", resp.reply);
+};
 
 loadConfig();
 </script>

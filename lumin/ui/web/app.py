@@ -223,6 +223,64 @@ Boundaries:
 # GENERATE ENDPOINT (non-stream, Markdown-aware)
 # ------------------------------------------------------------
 
+from fastapi import UploadFile, File
+
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    # Read raw bytes
+    raw = await file.read()
+
+    # Try to decode as UTF‑8 text
+    try:
+        text = raw.decode("utf-8")
+        decoded = True
+    except:
+        decoded = False
+        text = None
+
+    # Determine active session
+    # If your chat system uses a session ID, retrieve it here.
+    # If not, fall back to a single global session.
+    session_id = "default"
+    if session_id not in conversations:
+        conversations[session_id] = []
+
+    # Store file content in conversation history
+    if decoded:
+        conversations[session_id].append({
+            "role": "user",
+            "content": f"[Uploaded file: {file.filename}]\n{text}"
+        })
+    else:
+        conversations[session_id].append({
+            "role": "user",
+            "content": (
+                f"[Uploaded file: {file.filename} — binary data, {len(raw)} bytes]"
+            )
+        })
+
+    # Build assistant reply
+    if decoded:
+        preview = text[:500]  # prevent flooding the chat
+        return {
+            "reply": (
+                f"I received **{file.filename}** and successfully read it.\n\n"
+                f"Here is a preview:\n\n"
+                f"{preview}\n\n"
+                f"(The full content is now part of the conversation, "
+                f"so you can ask me questions about it.)"
+            )
+        }
+    else:
+        return {
+            "reply": (
+                f"I received **{file.filename}**, but it isn't a text file I can decode.\n"
+                f"I stored its metadata in the conversation so you can still ask me about it."
+            )
+        }
+
+
 @app.post("/api/generate")
 async def generate(req: dict):
     text = req.get("text", "")
@@ -323,7 +381,7 @@ async def chat_ws(ws: WebSocket):
             except Exception as e:
                 print("ERROR in /ws/chat:", e)
                 await ws.send_json({"session": session_id, "reply": "Error contacting model.", "stream": False})
-
+                
     except WebSocketDisconnect:
         print("WebSocket disconnected")
     finally:
