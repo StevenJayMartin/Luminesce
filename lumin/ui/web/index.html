@@ -49,6 +49,13 @@
         gap: 12px;
     }
 
+    #model-bar-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 13px;
+    }
+
     #model-picker,
     #personality-picker {
         background: #1f2937;
@@ -62,6 +69,29 @@
     #model-info {
         opacity: 0.8;
         font-size: 13px;
+    }
+
+    #connection-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    #connection-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #ef4444; /* default: offline */
+    }
+
+    #export-chat {
+        padding: 4px 10px;
+        background: #1f2937;
+        color: var(--fg);
+        border: 1px solid var(--border-subtle);
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
     }
 
     #chat-container {
@@ -122,6 +152,30 @@
         box-shadow: 0 8px 20px rgba(0,0,0,0.35);
         animation: fadeIn 0.25s ease-out;
         word-wrap: break-word;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .msg-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        opacity: 0.85;
+    }
+
+    .msg-avatar {
+        font-size: 16px;
+    }
+
+    .msg-timestamp {
+        font-size: 11px;
+        opacity: 0.7;
+    }
+
+    .msg-body {
+        font-size: 14px;
     }
 
     .user {
@@ -183,7 +237,14 @@
             <select id="personality-picker"></select>
         </div>
     </div>
-    <div id="model-info">Loading model info…</div>
+    <div id="model-bar-right">
+        <div id="connection-status">
+            <span id="connection-dot"></span>
+            <span id="connection-label">Offline</span>
+        </div>
+        <button id="export-chat">Export chat</button>
+        <div id="model-info">Loading model info…</div>
+    </div>
 </div>
 
 <div id="chat-container"></div>
@@ -202,6 +263,29 @@ let session = null;
 let models = [];
 let personalities = [];
 let currentPersonality = null;
+let chatLog = []; // for export
+
+function getAvatar(role) {
+    if (role === "user") return "🧑";
+    // assistant avatar based on personality
+    switch (currentPersonality) {
+        case "developer": return "💻";
+        case "teacher": return "📘";
+        case "playful": return "🎉";
+        case "concise": return "⚡";
+        default: return "✨";
+    }
+}
+
+function getTypingText() {
+    switch (currentPersonality) {
+        case "developer": return "Compiling thoughts…";
+        case "teacher": return "Preparing explanation…";
+        case "playful": return "Lumin is vibing…";
+        case "concise": return "Thinking…";
+        default: return "Lumin is thinking…";
+    }
+}
 
 function renderMarkdown(text) {
     const html = marked.parse(text);
@@ -221,10 +305,47 @@ function renderMarkdown(text) {
     return container.innerHTML;
 }
 
-function addMessage(role, text, reuseDiv = null) {
+function formatTimestamp(date) {
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function addMessage(role, text, reuseDiv = null, timestamp = null) {
+    const ts = timestamp || new Date();
+    chatLog.push({
+        role,
+        content: text,
+        timestamp: ts.toISOString()
+    });
+
     let div = reuseDiv || document.createElement("div");
     div.className = `msg ${role}`;
-    div.innerHTML = renderMarkdown(text);
+
+    const header = document.createElement("div");
+    header.className = "msg-header";
+
+    const avatarSpan = document.createElement("span");
+    avatarSpan.className = "msg-avatar";
+    avatarSpan.textContent = getAvatar(role);
+
+    const roleSpan = document.createElement("span");
+    roleSpan.textContent = role === "user" ? "You" : "Lumin";
+
+    const tsSpan = document.createElement("span");
+    tsSpan.className = "msg-timestamp";
+    tsSpan.textContent = formatTimestamp(ts);
+
+    header.appendChild(avatarSpan);
+    header.appendChild(roleSpan);
+    header.appendChild(tsSpan);
+
+    const body = document.createElement("div");
+    body.className = "msg-body";
+    body.innerHTML = renderMarkdown(text);
+
+    div.innerHTML = "";
+    div.appendChild(header);
+    div.appendChild(body);
+
     if (!reuseDiv) document.getElementById("chat-container").appendChild(div);
     div.scrollIntoView({ behavior: "smooth" });
     return div;
@@ -235,7 +356,7 @@ function showTyping() {
         const t = document.createElement("div");
         t.id = "typing";
         t.className = "msg assistant";
-        t.textContent = "Lumin is thinking…";
+        t.textContent = getTypingText();
         document.getElementById("chat-container").appendChild(t);
         t.scrollIntoView({ behavior: "smooth" });
     }
@@ -244,6 +365,23 @@ function showTyping() {
 function hideTyping() {
     const t = document.getElementById("typing");
     if (t) t.remove();
+}
+
+function setConnectionStatus(status) {
+    const dot = document.getElementById("connection-dot");
+    const label = document.getElementById("connection-label");
+    if (!dot || !label) return;
+
+    if (status === "connected") {
+        dot.style.background = "#22c55e";
+        label.textContent = "Connected";
+    } else if (status === "connecting") {
+        dot.style.background = "#eab308";
+        label.textContent = "Connecting…";
+    } else {
+        dot.style.background = "#ef4444";
+        label.textContent = "Offline";
+    }
 }
 
 async function loadModels() {
@@ -350,18 +488,26 @@ async function loadConfig() {
 function connectWS() {
     if (wsConnecting) return;
     wsConnecting = true;
+    setConnectionStatus("connecting");
 
     ws = new WebSocket(`ws://${location.host}/ws/chat`);
 
     ws.onopen = () => {
         console.log("WS connected");
         wsConnecting = false;
+        setConnectionStatus("connected");
     };
 
     ws.onclose = () => {
         console.log("WS closed, retrying...");
         wsConnecting = false;
+        setConnectionStatus("connecting");
         setTimeout(connectWS, 1000);
+    };
+
+    ws.onerror = () => {
+        console.log("WS error");
+        setConnectionStatus("offline");
     };
 
     let currentAssistantDiv = null;
@@ -403,6 +549,21 @@ async function sendGenerate(text) {
     hideTyping();
     addMessage("assistant", resp.reply);
 }
+
+function exportChat() {
+    if (!chatLog.length) return;
+    const blob = new Blob([JSON.stringify(chatLog, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `lumin-chat-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+
+document.getElementById("export-chat").onclick = exportChat;
 
 document.getElementById("send").onclick = () => {
     if (!configLoaded) return;
