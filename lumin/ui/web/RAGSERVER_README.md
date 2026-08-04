@@ -137,3 +137,152 @@ If the RAG server is offline:
 Luminesce falls back to normal transcript-based chat
 
 No errors, no downtime
+
+⭐ Step 1 — Install the required Python packages
+On the machine where RAG will run:
+
+bash
+pip install fastapi uvicorn faiss-cpu numpy requests ollama beautifulsoup4 lxml
+This gives you:
+
+FastAPI → the server
+
+Uvicorn → the runner
+
+FAISS → vector search
+
+numpy → embeddings
+
+requests → web fetch
+
+ollama → embedding model
+
+beautifulsoup4 + lxml → internet RAG (HTML → text)
+
+That’s it.
+
+⭐ Step 2 — Create the RAG server directory
+Inside your Luminesce project:
+
+Code
+lumin/
+  rag_server/
+    __init__.py
+    server.py
+    embeddings.py
+    vector_store.py
+    ingest.py
+    retrieval.py
+You already have the scaffold from earlier messages.
+
+⭐ Step 3 — Run the RAG server manually (first test)
+From your project root:
+
+bash
+uvicorn lumin.rag_server.server:app --host 0.0.0.0 --port 8001
+You should see:
+
+Code
+Uvicorn running on http://0.0.0.0:8001
+Now test it:
+
+bash
+curl -X POST http://localhost:8001/rag \
+     -H "Content-Type: application/json" \
+     -d '{"query": "hello", "session": "test"}'
+If you get JSON back → RAG is working.
+
+⭐ Step 4 — Ingest something (optional but useful)
+You can ingest a webpage:
+
+bash
+python3 - << 'EOF'
+from lumin.rag_server.ingest import ingest_url
+ingest_url("https://en.wikipedia.org/wiki/FAISS")
+EOF
+Or ingest a local file:
+
+bash
+python3 - << 'EOF'
+from lumin.rag_server.ingest import ingest_text
+ingest_text(open("notes.txt").read())
+EOF
+Now your RAG server has knowledge.
+
+⭐ Step 5 — Luminesce will automatically use RAG
+Your WebSocket handler already has:
+
+python
+augmented_prompt = call_rag_server_safe(text, session_id)
+If RAG is running → it uses it.
+If RAG is not running → it falls back.
+
+You don’t need to configure anything else.
+
+⭐ Step 6 — Optional: run RAG automatically with systemd
+Create:
+
+Code
+/etc/systemd/system/lumin-rag.service
+Put this inside:
+
+Code
+[Unit]
+Description=Luminesce RAG Server
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USERNAME
+WorkingDirectory=/path/to/Luminesce
+ExecStart=/usr/bin/python3 -m uvicorn lumin.rag_server.server:app --host 0.0.0.0 --port 8001
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+Replace:
+
+YOUR_USERNAME
+
+/path/to/Luminesce
+
+Then enable it:
+
+bash
+sudo systemctl daemon-reload
+sudo systemctl enable lumin-rag.service
+sudo systemctl start lumin-rag.service
+Check status:
+
+bash
+sudo systemctl status lumin-rag.service
+Now your RAG server starts automatically on boot.
+
+⭐ Step 7 — You’re done
+You now have:
+
+RAG installed
+
+RAG running
+
+RAG ingesting
+
+RAG serving augmented prompts
+
+Luminesce using RAG automatically
+
+Optional systemd auto‑start
+
+You don’t need to know the internals.
+You don’t need to understand embeddings or FAISS.
+You don’t need to understand retrieval theory.
+
+You just:
+
+Install
+
+Run
+
+Ingest
+
+Enjoy
