@@ -42,7 +42,24 @@ def load_personality_prompt(model_name: str) -> str:
             return f.read()
     except Exception as e:
         print(f"ERROR loading personality '{personality_name}':", e)
-        return SYSTEM_PROMPT
+        return SYSTEM_PROMPT   
+
+def call_rag_server(query: str, session_id: str) -> str | None:
+    rag_cfg = config.get("rag", {})
+    if not rag_cfg.get("enabled"):
+        return None
+
+    try:
+        resp = requests.post(
+            rag_cfg["url"],
+            json={"query": query, "session": session_id},
+            timeout=3,
+        )
+        data = resp.json()
+        return data.get("augmented_prompt")
+    except Exception as e:
+        print("RAG unavailable:", e)
+        return None
 
 # ------------------------------------------------------------
 # FASTAPI APP
@@ -319,6 +336,23 @@ async def generate(req: dict):
 
 conversations = {}
 
+def call_rag_server_safe(query: str, session_id: str) -> str | None:
+    """
+    Safe RAG call — returns None if RAG server is offline or errors.
+    """
+    try:
+        resp = requests.post(
+            "http://192.168.1.200:8001/rag",
+            json={"query": query, "session": session_id},
+            timeout=2,
+        )
+        data = resp.json()
+        return data.get("augmented_prompt")
+    except Exception as e:
+        print("RAG unavailable:", e)
+        return None
+
+
 @app.websocket("/ws/chat")
 async def chat_ws(ws: WebSocket):
     await ws.accept()
@@ -329,7 +363,11 @@ async def chat_ws(ws: WebSocket):
     personality_prompt = load_personality_prompt(model_name)
 
     try:
-        await ws.send_json({"session": session_id, "reply": "Connected. Ask me anything.", "stream": False})
+        await ws.send_json({
+            "session": session_id,
+            "reply": "Connected. Ask me anything.",
+            "stream": False
+        })
 
         while True:
             # Receive JSON message from the client
@@ -339,15 +377,25 @@ async def chat_ws(ws: WebSocket):
             # Store user message
             conversations[session_id].append({"role": "user", "content": text})
 
-            # Build transcript with personality prompt
-            transcript = personality_prompt.strip() + "\n\n"
-            for m in conversations[session_id]:
-                transcript += f"{m['role'].capitalize()}: {m['content']}\n"
-            transcript += "Assistant:"
+            # ------------------------------------------------------------
+            # TRY RAG AUGMENTATION
+            # ------------------------------------------------------------
+            augmented_prompt = call_rag_server_safe(text, session_id)
+
+            if augmented_prompt:
+                # Use RAG prompt
+                prompt_to_llm = augmented_prompt
+            else:
+                # Fall back to your existing transcript behavior
+                transcript = personality_prompt.strip() + "\n\n"
+                for m in conversations[session_id]:
+                    transcript += f"{m['role'].capitalize()}: {m['content']}\n"
+                transcript += "Assistant:"
+                prompt_to_llm = transcript
 
             payload = {
                 "model": model_name,
-                "prompt": transcript,
+                "prompt": prompt_to_llm,
                 "stream": True
             }
 
@@ -373,15 +421,31 @@ async def chat_ws(ws: WebSocket):
                         continue
 
                     full_reply += token
-                    await ws.send_json({"session": session_id, "reply": token, "stream": True})
+                    await ws.send_json({
+                        "session": session_id,
+                        "reply": token,
+                        "stream": True
+                    })
 
-                conversations[session_id].append({"role": "assistant", "content": full_reply})
-                await ws.send_json({"session": session_id, "reply": full_reply, "stream": False})
+                conversations[session_id].append({
+                    "role": "assistant",
+                    "content": full_reply
+                })
+
+                await ws.send_json({
+                    "session": session_id,
+                    "reply": full_reply,
+                    "stream": False
+                })
 
             except Exception as e:
                 print("ERROR in /ws/chat:", e)
-                await ws.send_json({"session": session_id, "reply": "Error contacting model.", "stream": False})
-                
+                await ws.send_json({
+                    "session": session_id,
+                    "reply": "Error contacting model.",
+                    "stream": False
+                })
+
     except WebSocketDisconnect:
         print("WebSocket disconnected")
     finally:
