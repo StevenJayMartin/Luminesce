@@ -1,24 +1,18 @@
-⭐ Luminesce RAG Backend — Quick Setup Guide
-1. Install dependencies (LLM backend box)
+⭐ RAG Server — Impatient Install & Setup Guide (Strict + Concise)
+0. Clone down the repo
+git clone https://github.com/StevenJayMartin/Luminesce.git
+
+1. Install dependencies (on the backend box)
 bash
 pip install fastapi uvicorn faiss-cpu numpy requests ollama beautifulsoup4 lxml
-This gives you:
+2. Pull the embedding model (required)
+bash
+ollama pull nomic-embed-text
+Without this, RAG will throw:
 
-FastAPI + Uvicorn → the RAG server
-
-FAISS → vector search
-
-numpy → embeddings
-
-requests → web fetch
-
-BeautifulSoup + lxml → internet RAG
-
-ollama → embedding model
-
-2. Place the RAG server code
-On your LLM backend machine, ensure this directory exists:
-
+Code
+model "nomic-embed-text" not found
+3. Ensure RAG directory exists
 Code
 lumin/rag_server/
     server.py
@@ -27,49 +21,39 @@ lumin/rag_server/
     ingest.py
     retrieval.py
     __init__.py
-(You already have the scaffold.)
-
-3. Start the RAG server
-From your project root:
-
+4. Start the RAG server
 bash
 uvicorn lumin.rag_server.server:app --host 0.0.0.0 --port 8001
-Your RAG endpoint is now live at:
+RAG is now live at:
 
 Code
 http://<backend-ip>:8001/rag
-4. Enable RAG in Luminesce UI config.json
-On your UI machine:
-
+5. Enable RAG in Luminesce UI config.json
 json
 "rag": {
   "enabled": true,
   "url": "http://192.168.1.205:8001/rag"
 }
-Luminesce will automatically:
+Luminesce will:
 
 use RAG if reachable
 
-fall back to normal chat if not
+fall back automatically if not
 
-No restart required.
-
-5. Test the RAG endpoint
+6. Test RAG
 bash
 curl -X POST http://192.168.1.205:8001/rag \
      -H "Content-Type: application/json" \
      -d '{"query": "hello", "session": "test"}'
-If you get JSON → RAG is working.
+If JSON returns → RAG is working.
 
-6. Ingest a webpage (Internet RAG)
+7. Ingest a webpage (Internet RAG)
 bash
 python3 - << 'EOF'
 from lumin.rag_server.ingest import ingest_url
 ingest_url("https://en.wikipedia.org/wiki/FAISS")
 EOF
-Now your RAG server knows that page.
-
-7. Optional: systemd service (auto‑start on boot)
+8. Optional: systemd auto‑start
 Create:
 
 Code
@@ -90,25 +74,27 @@ Restart=always
 
 [Install]
 WantedBy=multi-user.target
-Enable it:
+Enable:
 
 bash
 sudo systemctl daemon-reload
 sudo systemctl enable lumin-rag.service
 sudo systemctl start lumin-rag.service
-Check status:
+Check:
 
 bash
 sudo systemctl status lumin-rag.service
-⭐ That’s it — RAG is now running on your big backend box
-You now have:
+⭐ Done
+This is the minimal, strict, impatient‑friendly RAG setup doc:
 
-RAG server running
+install deps
 
-Internet ingestion working
+pull embedding model
 
-Luminesce UI automatically using RAG
+run server
 
-Full fallback if RAG is offline
+enable in config
 
-Optional systemd auto‑start
+ingest
+
+optional systemd
