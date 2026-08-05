@@ -3,7 +3,7 @@
 import requests
 import urllib.parse
 
-def wikipedia_search(topic: str) -> dict:
+def wikipedia_search(topic: str, config=None) -> dict:
     """
     Fetch a summary for a topic from Wikipedia REST API.
     Returns a dict with title, description, extract, url or an error.
@@ -12,8 +12,12 @@ def wikipedia_search(topic: str) -> dict:
     encoded = urllib.parse.quote(topic, safe="")
     url = base + encoded
 
+    headers = {
+        "User-Agent": "LuminApp/1.0 (https://example.com; contact@example.com)"
+    }
+
     try:
-        resp = requests.get(url, timeout=5)
+        resp = requests.get(url, headers=headers, timeout=5)
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:

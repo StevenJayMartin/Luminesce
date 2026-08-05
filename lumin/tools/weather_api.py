@@ -1,6 +1,6 @@
 import requests
 
-def weather_api(location: str) -> dict:
+def weather_api(location: str, config=None) -> dict:
     """
     Fetch current weather for a location using Open-Meteo.
     Returns:

@@ -3,7 +3,7 @@
 import requests
 import urllib.parse
 
-def web_search(query: str) -> str:
+def web_search(query: str, config=None) -> str:
     """
     Simple DuckDuckGo Instant Answer search.
     Returns a short summary string for the model to reason over.
