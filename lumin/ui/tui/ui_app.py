@@ -158,6 +158,12 @@ class LuminApp(App):
         self.append_chat(f"You: {user_text}\n")
         self.input_box.value = ""
         self.chat_history.append({"role": "user", "content": user_text})
+        
+        if user_text.startswith("ingest "):
+            url = user_text.split(" ", 1)[1].strip()
+            results = self._execute_tool("rag_ingest", {"url": url})
+            self.append_chat(f"🔧 RAG Ingest:\n{json.dumps(results, indent=2)}\n\n")
+            return
 
         try:
             await self._stream_llm(user_text)
@@ -184,10 +190,14 @@ class LuminApp(App):
         if name == "wikipedia_search" and not args.get("topic"):
             return {"error": "Missing 'topic' for wikipedia_search"}
 
+        if name == "rag_ingest" and not args.get("url"):
+            return {"error": "Missing 'url' for rag_ingest"}
+
         try:
-            return tool(**args)
+            return tool(config=self.config, **args)
         except Exception as e:
             return {"error": str(e)}
+
 
     def _format_tool_results(self, tool_name, results):
 

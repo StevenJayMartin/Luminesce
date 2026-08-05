@@ -1,15 +1,12 @@
-import numpy as np
-import ollama
+import requests
 
-EMBED_MODEL = "nomic-embed-text"
-EMBED_DIM = 768  # adjust if your model differs
-
-
-def embed(text: str) -> np.ndarray:
+def embed_text(text: str):
     """
-    Return a float32 numpy vector for the given text.
+    Call Ollama embedding model.
     """
-    resp = ollama.embeddings(model=EMBED_MODEL, prompt=text)
-    vec = np.array(resp["embedding"], dtype="float32")
-    return vec.reshape(1, -1)  # shape: (1, EMBED_DIM)
-
+    resp = requests.post(
+        "http://localhost:11434/api/embed",
+        json={"model": "nomic-embed-text", "input": text},
+        timeout=10
+    )
+    return resp.json()["embeddings"][0]

@@ -1,16 +1,18 @@
-from .embeddings import embed
 from .vector_store import search_vectors
 
 
-def build_augmented_prompt(query: str) -> str:
+def build_augmented_prompt(query: str):
     """
-    Embed the query, retrieve relevant docs, and build an augmented prompt.
+    Build RAG prompt with retrieved context.
     """
-    qvec = embed(query)
-    context_chunks = search_vectors(qvec, k=3)
-    context = "\n\n".join(context_chunks) if context_chunks else "(No context available.)"
+    results = search_vectors(query, k=5)
 
-    prompt = f"""
+    if not results:
+        context = "(No context available.)"
+    else:
+        context = "\n\n".join([r["chunk"] for r in results])
+
+    return f"""
 Use the following context to answer the question.
 
 Context:
@@ -18,6 +20,4 @@ Context:
 
 Question:
 {query}
-"""
-    return prompt.strip()
-
+""".strip()

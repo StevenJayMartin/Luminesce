@@ -1,28 +1,74 @@
 import faiss
 import numpy as np
 
-from .embeddings import EMBED_DIM
+# Embedding function
+from .embeddings import embed_text
 
-# In-memory FAISS index and doc store
-index = faiss.IndexFlatL2(EMBED_DIM)
-docs: list[str] = []
+# FAISS index (nomic-embed-text = 768 dims)
+DIM = 768
+index = faiss.IndexFlatL2(DIM)
+
+# Metadata store
+documents = []
 
 
-def add_vector(vec: np.ndarray, text: str) -> None:
+def add_vector(doc_id: str, chunk: str):
     """
-    Add a single vector + its raw text to the store.
+    Embed a chunk and add it to FAISS + metadata list.
     """
+    vec = embed_text(chunk)
+    vec = np.array(vec).astype("float32").reshape(1, -1)
+
     index.add(vec)
-    docs.append(text)
+    documents.append({
+        "id": doc_id,
+        "chunk": chunk
+    })
 
 
-def search_vectors(qvec: np.ndarray, k: int = 3) -> list[str]:
+def add_document(doc_id: str, text: str):
     """
-    Return top-k document texts for the given query vector.
+    Chunk text and add each chunk.
     """
-    if len(docs) == 0:
+    for chunk in chunk_text(text):
+        add_vector(doc_id, chunk)
+
+
+def search_vectors(query: str, k: int = 5):
+    """
+    Embed query and search FAISS.
+    """
+    if index.ntotal == 0:
         return []
 
-    distances, ids = index.search(qvec, k)
-    return [docs[i] for i in ids[0] if i >= 0]
+    qvec = embed_text(query)
+    qvec = np.array(qvec).astype("float32").reshape(1, -1)
 
+    distances, indices = index.search(qvec, k)
+
+    results = []
+    for idx in indices[0]:
+        if idx < len(documents):
+            results.append(documents[idx])
+
+    return results
+
+
+def chunk_text(text: str, max_len: int = 500):
+    """
+    Simple chunker: ~500 chars per chunk.
+    """
+    words = text.split()
+    chunks = []
+    current = []
+
+    for w in words:
+        current.append(w)
+        if len(" ".join(current)) > max_len:
+            chunks.append(" ".join(current))
+            current = []
+
+    if current:
+        chunks.append(" ".join(current))
+
+    return chunks

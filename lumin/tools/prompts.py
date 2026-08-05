@@ -46,6 +46,17 @@ Use ONLY when the user asks about available tools:
 {
   "intent": "list_tools"
 }
+{
+    "name": "rag_ingest",
+    "description": "Ingest a webpage into the RAG server",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "url": { "type": "string" }
+        },
+        "required": ["url"]
+    }
+}
 
 5. CHAT (WIDE-SWATH CONVERSATIONAL INTENT)
 Use this for ALL conversational dialog, including:

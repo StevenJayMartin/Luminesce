@@ -1,12 +1,17 @@
-from .embeddings import embed
-from .vector_store import add_vector
+import requests
+from bs4 import BeautifulSoup
+
+from .vector_store import add_document
 
 
-def ingest_text(text: str) -> None:
+def ingest_url(url: str):
     """
-    Ingest a single text blob into the RAG store.
-    For now: no chunking, just whole-text.
+    Fetch webpage, extract text, store in vector DB.
     """
-    vec = embed(text)
-    add_vector(vec, text)
+    html = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}).text
 
+    soup = BeautifulSoup(html, "lxml")
+    text = soup.get_text(separator="\n")
+
+    add_document(url, text)
+    return True

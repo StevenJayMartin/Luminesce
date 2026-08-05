@@ -1,28 +1,31 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from .ingest import ingest_url
 from .retrieval import build_augmented_prompt
 
 app = FastAPI()
 
 
-class RagRequest(BaseModel):
+class RAGRequest(BaseModel):
     query: str
-    session: str | None = None  # reserved for future per-session logic
+    session: str | None = None
 
 
-class RagResponse(BaseModel):
-    augmented_prompt: str
+class IngestRequest(BaseModel):
+    url: str
 
 
-@app.post("/rag", response_model=RagResponse)
-def rag_endpoint(req: RagRequest):
-    """
-    RAG microservice:
-    - takes a query
-    - builds an augmented prompt using stored docs
-    - returns that prompt to the chat server
-    """
-    augmented = build_augmented_prompt(req.query)
-    return RagResponse(augmented_prompt=augmented)
+@app.post("/rag")
+def rag_endpoint(req: RAGRequest):
+    prompt = build_augmented_prompt(req.query)
+    return {"augmented_prompt": prompt}
 
+
+@app.post("/ingest_url")
+def ingest_url_endpoint(req: IngestRequest):
+    try:
+        ingest_url(req.url)
+        return {"status": "ok", "url": req.url}
+    except Exception as e:
+        return {"error": str(e)}
