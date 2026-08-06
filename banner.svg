@@ -1,0 +1,115 @@
+<svg width="1200" height="300" viewBox="0 0 1200 300" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- DEFINITIONS -->
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#05060A"/>
+      <stop offset="50%" stop-color="#0A0B10"/>
+      <stop offset="100%" stop-color="#05060A"/>
+    </linearGradient>
+
+    <!-- Lamp glow -->
+    <radialGradient id="lampGlow" cx="30%" cy="50%" r="40%">
+      <stop offset="0%" stop-color="#FFF8D6" stop-opacity="0.9"/>
+      <stop offset="40%" stop-color="#FFE7A8" stop-opacity="0.55"/>
+      <stop offset="75%" stop-color="#F5C46A" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#F3A94A" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Bulb gradient -->
+    <radialGradient id="bulb" cx="50%" cy="35%" r="50%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="35%" stop-color="#FFF2C9"/>
+      <stop offset="70%" stop-color="#F7C46A"/>
+      <stop offset="100%" stop-color="#D98A3A"/>
+    </radialGradient>
+
+    <!-- Base gradient -->
+    <linearGradient id="base" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1C1E24"/>
+      <stop offset="50%" stop-color="#121318"/>
+      <stop offset="100%" stop-color="#08090D"/>
+    </linearGradient>
+
+    <!-- Text glow -->
+    <filter id="textGlow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Halo -->
+    <filter id="halo">
+      <feGaussianBlur stdDeviation="22" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- BACKGROUND -->
+  <rect width="1200" height="300" fill="url(#bg)" />
+
+  <!-- LAMP GLOW -->
+  <circle cx="250" cy="150" r="160" fill="url(#lampGlow)" />
+
+  <!-- BULB HALO -->
+  <circle cx="250" cy="150" r="90" fill="#FFE7A8" opacity="0.25" filter="url(#halo)" />
+
+  <!-- BULB -->
+  <ellipse cx="250" cy="150" rx="75" ry="100" fill="url(#bulb)" />
+
+  <!-- BULB OUTLINE -->
+  <ellipse cx="250" cy="150" rx="77" ry="102"
+           fill="none" stroke="#FDE7B8" stroke-width="2" opacity="0.55"/>
+
+  <!-- FILAMENT -->
+  <path d="M210 150
+           C225 125 235 125 245 150
+           C255 175 265 175 275 150
+           C285 125 295 125 310 150"
+        fill="none"
+        stroke="#FFD98A"
+        stroke-width="4"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        opacity="0.95"/>
+
+  <!-- FILAMENT CENTER GLOW -->
+  <circle cx="250" cy="150" r="12" fill="#FFE9B8" opacity="0.9"/>
+
+  <!-- NECK -->
+  <rect x="225" y="210" width="50" height="35" rx="10" fill="#1A1C22" />
+
+  <!-- BASE -->
+  <rect x="205" y="245" width="90" height="20" rx="6" fill="url(#base)" />
+  <rect x="185" y="265" width="130" height="35" rx="10" fill="url(#base)" />
+
+  <!-- SHADOW -->
+  <ellipse cx="250" cy="290" rx="90" ry="18" fill="#000000" opacity="0.45"/>
+
+  <!-- TITLE -->
+  <text x="500" y="150"
+        text-anchor="start"
+        font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        font-size="72"
+        fill="#FFE9B8"
+        filter="url(#textGlow)">
+    Luminesce
+  </text>
+
+  <!-- SUBTITLE -->
+  <text x="505" y="205"
+        text-anchor="start"
+        font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        font-size="28"
+        fill="#F9D47A"
+        opacity="0.9">
+    Enlightenment without heat
+  </text>
+
+</svg>
