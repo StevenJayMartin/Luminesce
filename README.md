@@ -1,13 +1,13 @@
 # 🌌 Luminesce  
 ### *Enlightenment without heat — a fully local, multi‑modal AI assistant platform*
 
-Luminesce is a **local‑first AI system** that listens, speaks, thinks, retrieves, animates, and orchestrates tools — all on your machine.  
+## Luminesce is a **local‑first AI system** that listens, speaks, thinks, retrieves, animates, and orchestrates tools — all on your machine.  
 It’s built for developers who want a **real**, extensible assistant architecture rather than a toy demo.
 
-Everything runs locally:  
+## Everything runs locally:  
 **LLM, STT, TTS, RAG, Tools, TUI, Web UI, FastAPI, MCP.**
 
-No cloud. No telemetry.  
+## No cloud. No telemetry.  
 Just your hardware, your models, your rules.
 
 ---
@@ -72,3 +72,82 @@ git clone https://github.com/StevenJayMartin/Luminesce
 cd Luminesce
 pip install -r requirements.txt
 python -m lumin.main
+```
+
+🧩 Tech Stack at a Glance
+Python — core logic
+
+Textual — TUI
+
+FastAPI — backend
+
+WebSockets — streaming UI
+
+Vosk — STT
+
+Piper — TTS
+
+Ollama — LLM inference
+
+MCP — tool orchestration
+
+NumPy / SciPy — audio processing
+
+SoundDevice — mic input
+
+# 🛠️ Help Wanted (Great First Issues)
+🎨 New bulb animations
+
+🔧 New Textual widgets
+
+🧠 New LLM tools (system control, search, OS integration)
+
+🎤 Better wake-word detection
+
+🪟 Web UI enhancements
+
+🔌 Plugin architecture
+
+🧩 MCP tool registry
+
+📚 RAG improvements
+
+🎶 TTS voice effects
+
+🌐 Multi-language STT/TTS
+
+🧱 Model switching UI
+
+## Luminesce is early — your contributions shape the platform.
+
+### 🧭 Architecture Overview
+Luminesce is structured into clean, isolated subsystems:
+
+lumin/llm/ — model drivers, streaming, tool routing
+
+lumin/stt/ — offline speech recognition
+
+lumin/tts/ — voice output
+
+lumin/ui/tui/ — Textual interface
+
+lumin/ui/web/ — Web UI + WebSockets
+
+lumin/api/ — FastAPI backend
+
+lumin/tools/ — tool definitions + MCP integration
+
+lumin/rag/ — retrieval augmentation
+
+lumin/config/ — YAML/JSON configuration
+
+lumin/core/ — orchestrator, state machine, sessions
+
+Each subsystem can be replaced, extended, or swapped.
+
+🤝 Contributing
+Pull requests are welcome.
+If you want to build a feature, open an issue first so we can coordinate.
+
+📜 License
+MIT License — see LICENSE.
