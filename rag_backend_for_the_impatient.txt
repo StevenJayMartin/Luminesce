@@ -14,7 +14,7 @@ Code
 model "nomic-embed-text" not found
 3. Ensure RAG directory exists
 Code
-lumin/rag_server/
+lumin/rag/
     server.py
     embeddings.py
     vector_store.py
@@ -23,7 +23,7 @@ lumin/rag_server/
     __init__.py
 4. Start the RAG server
 bash
-uvicorn lumin.rag_server.server:app --host 0.0.0.0 --port 8001
+uvicorn lumin.rag.server:app --host 0.0.0.0 --port 8001
 RAG is now live at:
 
 Code
@@ -50,7 +50,7 @@ If JSON returns → RAG is working.
 7. Ingest a webpage (Internet RAG)
 bash
 python3 - << 'EOF'
-from lumin.rag_server.ingest import ingest_url
+from lumin.rag.ingest import ingest_url
 ingest_url("https://en.wikipedia.org/wiki/FAISS")
 EOF
 8. Optional: systemd auto‑start
@@ -69,7 +69,7 @@ After=network.target
 Type=simple
 User=YOUR_USERNAME
 WorkingDirectory=/path/to/Luminesce
-ExecStart=/usr/bin/python3 -m uvicorn lumin.rag_server.server:app --host 0.0.0.0 --port 8001
+ExecStart=/usr/bin/python3 -m uvicorn lumin.rag.server:app --host 0.0.0.0 --port 8001
 Restart=always
 
 [Install]
