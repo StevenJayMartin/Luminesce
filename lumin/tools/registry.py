@@ -5,6 +5,8 @@ from lumin.tools.weather_api import weather_api
 from lumin.tools.web_search import web_search
 from lumin.tools.chat_tool import chat_tool
 from lumin.tools.list_tools import list_tools_tool
+from lumin.tools.rag.rag_query_tool import RagQueryTool
+
 import requests
 
 def rag_ingest(url: str, config=None):
@@ -23,6 +25,8 @@ def rag_ingest(url: str, config=None):
     except Exception as e:
         return {"error": str(e)}
 
+rag_query_tool = RagQueryTool()
+
 TOOLS = {
     "weather_api": weather_api,
     "web_search": web_search,
@@ -30,8 +34,8 @@ TOOLS = {
     "list_tools": list_tools_tool,
     "chat_tool": chat_tool,
     "rag_ingest": rag_ingest,
+    "rag_query": rag_query_tool,
 }
-
 
 def get(name: str):
     """Return a tool function by name."""

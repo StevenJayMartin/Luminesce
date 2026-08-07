@@ -1,6 +1,6 @@
 # lumin/tools/router.py
 
-def route_intent(intent_json):
+def route_intent(intent_json, user_message: str):
     """
     Decide which tool to call based on the LLM's intent JSON.
     Returns: (tool_name, tool_args)
@@ -10,6 +10,22 @@ def route_intent(intent_json):
         return None, {"error": "Invalid intent JSON"}
 
     intent = intent_json.get("intent", "").lower()
+
+    message = user_message.lower()
+
+    # Explicit override: rag_query
+    if "rag_query" in message:
+        return "rag_query", {
+            "query": intent_json.get("query", ""),
+            "session": intent_json.get("session", "default")
+        }
+
+    # Explicit override: rag_ingest
+    if "rag_ingest" in message:
+        return "rag_ingest", {
+            "url": intent_json.get("url", ""),
+            "config": intent_json.get("config", None)
+        }
 
     # WEATHER
     if intent == "weather":

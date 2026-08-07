@@ -364,10 +364,12 @@ class LuminApp(App):
                 {"role": "assistant", "content": fallback}
             )
             return
+        
+        user_message = self.chat_history[-1]["content"]
 
         if self.tools_enabled and intent_json:
             try:
-                tool_name, tool_args = route_intent(intent_json)
+                tool_name, tool_args = route_intent(intent_json, user_message)
 
                 block = render_tool_call_block(tool_name, tool_args)
                 self.append_chat(block)
