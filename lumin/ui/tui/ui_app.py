@@ -161,7 +161,7 @@ class LuminApp(App):
         
         if user_text.startswith("ingest "):
             url = user_text.split(" ", 1)[1].strip()
-            results = self._execute_tool("rag_ingest", {"url": url})
+            results = await self._execute_tool("rag_ingest", {"url": url})
             self.append_chat(f"🔧 RAG Ingest:\n{json.dumps(results, indent=2)}\n\n")
             return
 
@@ -173,7 +173,7 @@ class LuminApp(App):
     # -----------------------------
     # Tool execution
     # -----------------------------
-    def _execute_tool(self, name, args):
+    async def _execute_tool(self, name, args):
         if name == "list_tools":
             return {"tools": list_tools()}
 
@@ -194,7 +194,13 @@ class LuminApp(App):
             return {"error": "Missing 'url' for rag_ingest"}
 
         try:
+            # Async tools (rag_query, rag_ingest)
+            if asyncio.iscoroutinefunction(tool.__call__):
+                return await tool(**args)
+
+            # Sync tools
             return tool(config=self.config, **args)
+
         except Exception as e:
             return {"error": str(e)}
 
@@ -374,7 +380,9 @@ class LuminApp(App):
                 block = render_tool_call_block(tool_name, tool_args)
                 self.append_chat(block)
 
-                tool_results = self._execute_tool(tool_name, tool_args)
+                tool_results = await self._execute_tool(tool_name, tool_args)
+
+
 
                 results_block = self._format_tool_results(tool_name, tool_results)
                 self.append_chat(results_block)

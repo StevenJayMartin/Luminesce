@@ -1,6 +1,6 @@
 # lumin/tools/chat_tool.py
 
-def chat_tool(message: str = ""):
+def chat_tool(message: str = "", config=None):
     """
     Conversational small-talk tool.
     Handles greetings, introductions, jokes, casual questions,

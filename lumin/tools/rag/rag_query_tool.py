@@ -1,29 +1,25 @@
-# lumin/tools/rag/rag_query_tool.py
-
 import httpx
 
 class RagQueryTool:
-    """
-    Query the RAG subsystem for answers using previously ingested documents.
-    Use this tool when the user wants information retrieved from stored or indexed content.
-    """
     name = "rag_query"
     description = "Query the RAG subsystem for contextual retrieval."
 
-    def __init__(self, rag_url="http://localhost:8001"):
-        self.rag_url = rag_url
+    def __init__(self, config=None):
+        # Use config.json if provided
+        if config and "rag" in config and "url" in config["rag"]:
+            # Full URL already includes /rag
+            self.rag_url = config["rag"]["url"]
+        else:
+            # Fallback
+            self.rag_url = "http://192.168.1.205:8001/rag"
 
     async def __call__(self, query: str, session: str = "default"):
-        """
-        Execute a RAG query by calling the RAG FastAPI server.
-        """
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.rag_url}/rag",
+                self.rag_url,
                 json={"query": query, "session": session},
                 timeout=30.0
             )
 
         response.raise_for_status()
         return response.json()
-
