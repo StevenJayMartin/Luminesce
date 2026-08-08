@@ -1,6 +1,7 @@
-import sys
-import subprocess
 import os
+import sys
+import shutil
+import subprocess
 import traceback
 
 class MCPClient:
@@ -8,11 +9,11 @@ class MCPClient:
         self.server_cmd = server_cmd
         self.cwd = cwd
         self.process = None
-        
+
     async def start(self):
         print("\n=== MCP DEBUG START ===")
 
-        # 1. Show raw server_cmd
+        # 1. Raw server_cmd
         print("RAW server_cmd:", repr(self.server_cmd), "TYPE:", type(self.server_cmd))
 
         # 2. Normalize command
@@ -25,18 +26,18 @@ class MCPClient:
         for i, part in enumerate(cmd):
             print(f"  CMD[{i}] =", repr(part))
 
-        # 3. Show cwd
+        # 3. CWD diagnostics
         print("CWD:", repr(self.cwd))
         print("CWD exists:", os.path.isdir(self.cwd) if self.cwd else "(None)")
 
-        # 4. Show PATH and python resolution
+        # 4. Python resolution
         print("sys.executable:", sys.executable)
         print("PATH:", os.environ.get("PATH"))
 
-        # 5. Show environment differences
+        # 5. Environment differences
         print("Working directory (os.getcwd()):", os.getcwd())
 
-        # 6. Try a dry-run resolution
+        # 6. Dry-run resolution
         try:
             resolved = shutil.which(cmd[0])
             print("shutil.which(cmd[0]):", resolved)
