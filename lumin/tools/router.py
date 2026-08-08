@@ -1,6 +1,6 @@
 # lumin/tools/router.py
 
-def route_intent(intent_json, user_message: str, config=None`):
+def route_intent(intent_json, user_message: str, config=None):
     """
     Decide which tool to call based on the LLM's intent JSON.
     Returns: (tool_name, tool_args)
