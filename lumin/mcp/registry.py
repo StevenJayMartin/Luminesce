@@ -1,20 +1,51 @@
 # lumin/mcp/registry.py
 
-class MCPRegistry:
+"""
+MCP Tool Registry
+
+This module stores MCP tools discovered at runtime.
+It mirrors the structure of the local tool registry, but keeps MCP tools
+separate so the TUI can merge them cleanly without circular imports.
+"""
+
+# Dictionary of MCP tools:
+# key: tool name (str)
+# value: metadata dict from MCP discovery
+MCP_TOOLS = {}
+
+
+def register_mcp_tools(tools: dict):
     """
-    Stores MCP tool metadata and exposes them to the tool router.
+    Register MCP tools discovered from an MCP server.
+
+    tools: dict mapping tool_name → metadata
     """
+    global MCP_TOOLS
 
-    def __init__(self):
-        self.tools = {}
+    for name, meta in tools.items():
+        MCP_TOOLS[name] = meta
 
-    def register_tools(self, tool_list):
-        """
-        Add MCP tools discovered from the server.
-        """
-        for tool in tool_list:
-            self.tools[tool["name"]] = tool
 
-    def get_tool(self, name):
-        return self.tools.get(name)
+def get(name: str):
+    """
+    Retrieve MCP tool metadata by name.
+    Returns None if the tool is not an MCP tool.
+    """
+    return MCP_TOOLS.get(name)
 
+
+def list_tools():
+    """
+    Return a list of MCP tools formatted like local tools:
+    [
+        {"name": "...", "description": "..."},
+        ...
+    ]
+    """
+    return [
+        {
+            "name": name,
+            "description": meta.get("description", "")
+        }
+        for name, meta in MCP_TOOLS.items()
+    ]

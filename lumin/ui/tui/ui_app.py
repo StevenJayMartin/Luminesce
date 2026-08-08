@@ -17,6 +17,8 @@ from lumin.voice.stt import SpeechRecognizer
 from lumin.tools.registry import get as get_tool, list_tools
 from lumin.tools.router import route_intent
 from lumin.tools.prompts import INTENT_SYSTEM_PROMPT, TOOL_PROMPTS, DEFAULT_TOOL_PROMPT
+from lumin.mcp.registry import MCP_TOOLS
+from lumin.mcp.client import MCPClient
 
 log = logging.getLogger("lumin-ui")
 
@@ -53,6 +55,17 @@ class LuminApp(App):
             config,
             volume_callback=self._volume_callback_safe,
         )
+        
+        # -----------------------------
+        # MCP Client Initialization
+        # -----------------------------
+        mcp_cfg = config.get("mcp", {})
+        server_cmd = mcp_cfg.get("server_cmd")
+
+        if server_cmd:
+            self.mcp_client = MCPClient(server_cmd)
+        else:
+            self.mcp_client = None
 
         self.chat_area = None
         self.input_box = None
@@ -138,6 +151,16 @@ class LuminApp(App):
                 target=self._always_listen_loop, daemon=True
             ).start()
 
+        # -----------------------------
+        # Start MCP Client
+        # -----------------------------
+        if self.mcp_client:
+            try:
+                await self.mcp_client.start()
+                self.append_chat("🔌 MCP Connected\n")
+            except Exception as e:
+                self.append_chat(f"⚠️ MCP Failed to start: {e}\n")
+
     async def on_button_pressed(self, event: Button.Pressed):
         if event.button.id == "ptt-button":
             self._start_stt()
@@ -174,9 +197,20 @@ class LuminApp(App):
     # Tool execution
     # -----------------------------
     async def _execute_tool(self, name, args):
+        
         if name == "list_tools":
-            return {"tools": list_tools()}
+            # Local tools
+            local = list_tools()
 
+            # MCP tools
+            mcp = [
+                {"name": n, "description": meta.get("description", "")}
+                for n, meta in MCP_TOOLS.items()
+            ]
+
+            # Unified list
+            return {"tools": local + mcp}
+   
         tool = get_tool(name)
         if not tool:
             return {"error": f"Unknown tool '{name}'"}
@@ -375,14 +409,31 @@ class LuminApp(App):
 
         if self.tools_enabled and intent_json:
             try:
+                    
                 tool_name, tool_args = route_intent(intent_json, user_message)
 
                 block = render_tool_call_block(tool_name, tool_args)
                 self.append_chat(block)
 
+                # -----------------------------
+                # MCP TOOL EXECUTION
+                # -----------------------------
+                if tool_name in MCP_TOOLS:
+                    try:
+                        tool_results = await self.mcp_client.execute(tool_name, tool_args)
+                    except Exception as e:
+                        tool_results = {"error": f"MCP execution failed: {e}"}
+
+                    results_block = self._format_tool_results(tool_name, tool_results)
+                    self.append_chat(results_block)
+
+                    await self._continue_llm_with_tool_results(tool_name, tool_results)
+                    return
+
+                # -----------------------------
+                # LOCAL TOOL EXECUTION (existing)
+                # -----------------------------
                 tool_results = await self._execute_tool(tool_name, tool_args)
-
-
 
                 results_block = self._format_tool_results(tool_name, tool_results)
                 self.append_chat(results_block)
@@ -485,3 +536,11 @@ class LuminApp(App):
         self._stop_flag = True
         self._save_chat_history()
         self.tts.stop()
+        # -----------------------------
+        # Stop MCP Client
+        # -----------------------------
+        if self.mcp_client:
+            try:
+                self.mcp_client.stop()
+            except Exception:
+                pass

@@ -9,4 +9,11 @@ def embed_text(text: str):
         json={"model": "nomic-embed-text", "input": text},
         timeout=10
     )
-    return resp.json()["embeddings"][0]
+    
+    data = resp.json()
+
+    embs = data.get("embeddings", [])
+    if not embs:
+        raise ValueError(f"Embedding model returned no embeddings: {data}")
+
+    return embs[0]

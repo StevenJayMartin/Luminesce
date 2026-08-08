@@ -5,20 +5,19 @@ class MCPDiscovery:
     Handles MCP tool + schema discovery.
     """
 
-    def __init__(self, transport):
-        self.transport = transport
+    def __init__(self, rpc_client):
+        self.rpc = rpc_client
 
-    async def get_tools(self):
+    async def get_tools(self) -> list:
         """
-        Call MCP get_tools.
+        Call MCP get_tools and return the raw list.
         """
-        # TODO: JSON-RPC call
-        return []
+        resp = await self.rpc.send_request("get_tools")
+        return resp.get("result", {}).get("tools", [])
 
-    async def get_schema(self):
+    async def get_schema(self) -> dict:
         """
-        Call MCP get_schema.
+        Call MCP get_schema and return the raw schema.
         """
-        # TODO: JSON-RPC call
-        return {}
-
+        resp = await self.rpc.send_request("get_schema")
+        return resp.get("result", {})
