@@ -41,6 +41,14 @@
     "voice": "en_US-ryan-low"
   },
 
+  "mcp": {
+    "server_cmd": [
+      "python",
+      "-m",
+      "lumin.mcp.test_server"
+    ]
+  },
+
   "tools": {
     "enabled": true,
     "list": ["duckduckgo_search"],

@@ -1,124 +1,67 @@
-# lumin/mcp/client.py
-
-import asyncio
-import subprocess
 import sys
-from pathlib import Path
-
-from lumin.mcp.jsonrpc import JsonRpcClient
-from lumin.mcp.discovery import MCPDiscovery
-from lumin.mcp.executor import MCPExecutor
-
+import subprocess
+import os
+import traceback
 
 class MCPClient:
-    """
-    MCP Orchestrator:
-    - Spawns MCP servers
-    - Connects via pipes
-    - Wraps JSON‑RPC transport
-    - Loads tools via discovery
-    - Exposes executor for tool calls
-    """
-
-    def __init__(self, server_cmd: str, cwd: str | None = None):
+    def __init__(self, server_cmd, cwd=None):
         self.server_cmd = server_cmd
-        self.cwd = cwd or str(Path.cwd())
-
-        self.process: subprocess.Popen | None = None
-        self.rpc: JsonRpcClient | None = None
-        self.discovery: MCPDiscovery | None = None
-        self.executor: MCPExecutor | None = None
-
-        self.tools: dict = {}  # tool_name → metadata
-
+        self.cwd = cwd
+        self.process = None
+        
     async def start(self):
-        """
-        Spawn MCP server and connect streams.
-        """
-        if self.process:
-            return  # already running
+        print("\n=== MCP DEBUG START ===")
 
-        # Spawn MCP server
-        self.process = subprocess.Popen(
-            self.server_cmd.split(),
-            cwd=self.cwd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=False  # raw bytes
-        )
+        # 1. Show raw server_cmd
+        print("RAW server_cmd:", repr(self.server_cmd), "TYPE:", type(self.server_cmd))
 
-        if not self.process.stdout or not self.process.stdin:
-            raise RuntimeError("Failed to open MCP server pipes")
+        # 2. Normalize command
+        if isinstance(self.server_cmd, str):
+            cmd = self.server_cmd.split()
+        else:
+            cmd = list(self.server_cmd)
 
-        # Wrap pipes in asyncio streams
-        reader = asyncio.StreamReader()
-        protocol = asyncio.StreamReaderProtocol(reader)
-        await asyncio.get_event_loop().connect_read_pipe(lambda: protocol, self.process.stdout)
+        print("NORMALIZED CMD LIST:", cmd)
+        for i, part in enumerate(cmd):
+            print(f"  CMD[{i}] =", repr(part))
 
-        writer_transport, writer_protocol = await asyncio.get_event_loop().connect_write_pipe(
-            asyncio.streams.FlowControlMixin, self.process.stdin
-        )
-        writer = asyncio.StreamWriter(writer_transport, writer_protocol, reader, asyncio.get_event_loop())
+        # 3. Show cwd
+        print("CWD:", repr(self.cwd))
+        print("CWD exists:", os.path.isdir(self.cwd) if self.cwd else "(None)")
 
-        # Create JSON‑RPC client
-        self.rpc = JsonRpcClient(reader, writer)
+        # 4. Show PATH and python resolution
+        print("sys.executable:", sys.executable)
+        print("PATH:", os.environ.get("PATH"))
 
-        # Create discovery + executor
-        self.discovery = MCPDiscovery(self.rpc)
-        self.executor = MCPExecutor(self.rpc)
+        # 5. Show environment differences
+        print("Working directory (os.getcwd()):", os.getcwd())
 
-        # Load tools
-        await self.load_tools()
+        # 6. Try a dry-run resolution
+        try:
+            resolved = shutil.which(cmd[0])
+            print("shutil.which(cmd[0]):", resolved)
+        except Exception as e:
+            print("shutil.which ERROR:", e)
 
-    async def load_tools(self):
-        """
-        Load MCP tools via discovery.
-        """
-        if not self.discovery:
-            raise RuntimeError("MCPDiscovery not initialized")
+        print("Attempting subprocess.Popen...\n")
 
-        raw_tools = await self.discovery.get_tools()
-        schema = await self.discovery.get_schema()
+        try:
+            self.process = subprocess.Popen(
+                cmd,
+                cwd=self.cwd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=False,
+                shell=True if sys.platform == "win32" else False
+            )
+            print("Popen SUCCESS — process started.")
+            print("=== MCP DEBUG END ===\n")
 
-        # Convert raw MCP tool definitions into your internal format
-        for tool in raw_tools:
-            name = tool.get("name")
-            desc = tool.get("description", "")
-            params = tool.get("parameters", {})
-
-            self.tools[name] = {
-                "name": name,
-                "description": desc,
-                "parameters": params,
-                "schema": schema.get(name, {})
-            }
-
-    async def execute(self, tool_name: str, args: dict):
-        """
-        Execute an MCP tool via JSON‑RPC.
-        """
-        if not self.executor:
-            raise RuntimeError("MCPExecutor not initialized")
-
-        return await self.executor.execute(tool_name, args)
-
-    async def stop(self):
-        """
-        Stop MCP server.
-        """
-        if self.process:
-            self.process.terminate()
-            try:
-                await asyncio.sleep(0.1)
-                self.process.kill()
-            except Exception:
-                pass
-
-            self.process = None
-
-    def list_tools(self):
-        """
-        Return MCP tool metadata.
-        """
-        return self.tools
+        except Exception as e:
+            print("Popen FAILED:", e)
+            print("TYPE:", type(e))
+            print("TRACEBACK:")
+            traceback.print_exc()
+            print("=== MCP DEBUG END (FAILURE) ===\n")
+            raise

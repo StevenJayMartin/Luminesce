@@ -61,9 +61,19 @@ class LuminApp(App):
         # -----------------------------
         mcp_cfg = config.get("mcp", {})
         server_cmd = mcp_cfg.get("server_cmd")
+        cwd = mcp_cfg.get("cwd")
 
+        # Force correct type
+        if isinstance(server_cmd, str):
+            # Try to parse JSON list if it was stringified
+            try:
+                server_cmd = json.loads(server_cmd)
+            except Exception:
+                # Fallback: split string
+                server_cmd = server_cmd.split()    
+        
         if server_cmd:
-            self.mcp_client = MCPClient(server_cmd)
+            self.mcp_client = MCPClient(server_cmd, cwd=cwd)
         else:
             self.mcp_client = None
 
