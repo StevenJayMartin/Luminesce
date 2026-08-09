@@ -1,11 +1,12 @@
-# lumin/tools/registry.py
-
 from lumin.tools.wikipedia import wikipedia_search
 from lumin.tools.weather_api import weather_api
 from lumin.tools.web_search import web_search
 from lumin.tools.chat_tool import chat_tool
 from lumin.tools.list_tools import list_tools_tool
 from lumin.tools.rag.rag_query_tool import RagQueryTool
+
+# ⭐ Import the MCPClient INSTANCE, not the class
+from lumin.mcp.client import mcp_client
 
 import requests
 
@@ -16,7 +17,7 @@ def rag_ingest(url: str, config=None):
         return {"error": "Config not provided to rag_ingest"}
 
     rag_url = config["rag"]["url"]
-    base = rag_url.rsplit("/", 1)[0]  # strip /rag
+    base = rag_url.rsplit("/", 1)[0]
     endpoint = f"{base}/ingest_url"
 
     try:
@@ -35,14 +36,15 @@ TOOLS = {
     "chat_tool": chat_tool,
     "rag_ingest": rag_ingest,
     "rag_query": rag_query_tool,
+
+    # ⭐ Correct MCP unified tool entry
+    "mcp_tool": mcp_client.run_command,
 }
 
 def get(name: str):
-    """Return a tool function by name."""
     return TOOLS.get(name)
 
 def list_tools():
-    """Return a list of all tools with names and descriptions."""
     return [
         {"name": name, "description": func.__doc__ or ""}
         for name, func in TOOLS.items()

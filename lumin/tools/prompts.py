@@ -83,6 +83,14 @@ Format:
   "message": "<the user's message verbatim>"
 }
 
+6. MCP
+If the user message begins with "mcp_", classify intent as "tool" and set:
+{
+  "intent": "tool",
+  "tool_name": "mcp_tool",
+  "command": "<full user message>"
+}
+
 ===========================
 STRING RULES
 ===========================

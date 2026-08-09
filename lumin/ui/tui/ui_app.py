@@ -73,7 +73,8 @@ class LuminApp(App):
                 server_cmd = server_cmd.split()    
         
         if server_cmd:
-            self.mcp_client = MCPClient(server_cmd, cwd=cwd)
+            from lumin.mcp.client import mcp_client
+            self.mcp_client = mcp_client
         else:
             self.mcp_client = None
 
@@ -207,7 +208,12 @@ class LuminApp(App):
     # Tool execution
     # -----------------------------
     async def _execute_tool(self, name, args):
-        
+
+        # ⭐ SPECIAL CASE: MCP tools
+        if name == "mcp_tool":
+            tool = get_tool(name)
+            return tool(args["command"])
+  
         if name == "list_tools":
             # Local tools
             local = list_tools()

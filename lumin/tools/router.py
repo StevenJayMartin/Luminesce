@@ -1,17 +1,17 @@
 # lumin/tools/router.py
 
 def route_intent(intent_json, user_message: str, config=None):
-    """
-    Decide which tool to call based on the LLM's intent JSON.
-    Returns: (tool_name, tool_args)
-    """
-
     if not isinstance(intent_json, dict):
         return None, {"error": "Invalid intent JSON"}
 
     intent = intent_json.get("intent", "").lower()
-
     message = user_message.lower()
+
+    # HARD ROUTE: Explicit MCP commands bypass intent classification
+    if message.startswith("mcp_"):
+        return "mcp_tool", {
+            "command": message
+        }
 
     # Explicit override: rag_query
     if "rag_query" in message:
@@ -56,3 +56,4 @@ def route_intent(intent_json, user_message: str, config=None):
         }
 
     return None, {"error": f"Unknown intent '{intent}'"}
+
