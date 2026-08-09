@@ -11,6 +11,16 @@ class MCPClient:
         self.cwd = cwd
         self.process = None
 
+    def send_jsonrpc_raw(self, req):
+        if not self.process or self.process.poll() is not None:
+            return {"error": "MCP server not running"}
+
+        self.process.stdin.write((json.dumps(req) + "\n").encode())
+        self.process.stdin.flush()
+
+        raw = self.process.stdout.readline().decode().strip()
+        return json.loads(raw)
+
     def run_command(self, command: str):
         return self.call_tool(command)
 

@@ -193,6 +193,22 @@ class LuminApp(App):
         self.input_box.value = ""
         self.chat_history.append({"role": "user", "content": user_text})
         
+        # -----------------------------------------
+        # RAW JSON-RPC MCP COMMAND
+        # -----------------------------------------
+        if user_text.startswith("mcp_rpc "):
+            try:
+                payload = user_text[len("mcp_rpc "):].strip()
+                req = json.loads(payload)
+
+                # IMPORTANT: send_jsonrpc_raw is sync, do NOT await it
+                result = self.mcp_client.send_jsonrpc_raw(req)
+
+                self.append_chat(f"🔧 MCP JSON-RPC:\n{json.dumps(result, indent=2)}\n\n")
+            except Exception as e:
+                self.append_chat(f"Error parsing JSON-RPC: {e}\n")
+            return
+
         if user_text.startswith("ingest "):
             url = user_text.split(" ", 1)[1].strip()
             results = await self._execute_tool("rag_ingest", {"url": url})
