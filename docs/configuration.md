@@ -1,0 +1,148 @@
+# Configuration
+
+Luminesce uses a single JSON configuration file.
+
+---
+
+## Example Configuration
+
+```
+llm:
+  model: "llama3"
+
+voice:
+  listen_mode: "push_to_talk"
+  stt_model: "vosk-model-small-en-us-0.15"
+
+tts:
+  enabled: true
+  voice: "en_US-ryan-medium"
+
+mcp:
+  server_cmd:
+    - python
+    - lumin/mcp/mcp_server.py
+  cwd: lumin/mcp
+
+rag:
+  enabled: true
+  storage_path: "lumin/rag/data"
+```
+
+---
+
+## Sections
+
+### LLM
+Controls Ollama model and personality.
+
+### Voice
+Controls STT and wake‑word behavior.
+
+### TTS
+Controls Piper voice output.
+
+### MCP
+Controls JSON‑RPC subprocess tools.
+
+### RAG
+Controls ingestion and vector search.
+
+---
+
+## Editing Configuration
+
+Edit:
+
+```
+lumin/config.json
+
+{
+  "ollama": {
+    "url": "http://192.168.1.205:11434",
+    "model": "llama3.2",
+    "mode": "chat"
+  },
+  "personalities": {
+    "default": "prompts/default.txt",
+    "teacher": "prompts/teacher.txt",
+    "concise": "prompts/concise.txt",
+    "developer": "prompts/developer.txt",
+    "playful": "prompts/playful.txt"
+  },
+  "model_personality_map": {
+     "llama3.2": "developer",
+     "phi3:medium": "teacher",
+     "qwen2.5:7b": "concise",
+     "mistral:7b": "default"
+  },
+  "voice": {
+    "mic_device": 1,
+    "vosk_model_path": "C:\\HOME_Scripts\\Luminesce\\lumin\\models\\vosk\\vosk-model-small-en-us-0.15",
+    "silence_threshold": 2000,
+    "silence_duration": 1.5,
+    "listen_mode": "push_to_talk",
+    "tts_enabled": true,
+    "wake_words": ["hey lumin", "lumin"],
+    "stop_words": ["stop", "cancel"],
+    "clear_words": ["clear that", "reset"],
+    "listen_again_words": ["listen again", "start over"]
+  },
+    "rag": {
+    "enabled": true,
+    "url": "http://192.168.1.205:8001/rag"
+  },
+  "tts": {
+    "enabled": false,
+    "engine": "piper",
+    "piper_path": "C:/HOME_Scripts/Luminesce/piper/piper.exe",
+    "model_path": "models/en_US-ryan-low.onnx",
+    "voice": "en_US-ryan-low"
+  },
+
+  "mcp": {
+    "server_cmd": [
+      "C:/HOME_Scripts/Luminesce/venv/Scripts/python.exe",
+      "C:/HOME_Scripts/Luminesce/lumin/mcp/mcp_server.py"
+    ],
+    "cwd": "C:/HOME_Scripts/Luminesce/lumin/mcp"
+  },
+
+  "tools": {
+    "enabled": true,
+    "list": ["duckduckgo_search"],
+    "search_engine": "duckduckgo"
+  },
+
+  "ui": {
+    "stream_to_terminal": true,
+    "theme": "dark",
+    "animations": true,
+
+    "mode": "auto",      
+    "width": "auto"
+  },
+
+  "api": {
+    "enabled": false,
+    "host": "0.0.0.0",
+    "port": 8000
+  }
+}
+
+```
+
+### or provide a custom config path when launching.
+
+```
+ui/tui
+(venv) PS C:\HOME_Scripts\Luminesce> ...
+python -m lumin.main --model="mistral:7b" --llm-mode=chat --config="lumin/config.json"
+
+ui/web
+(venv) sjm@pop-os:~/Luminesce$ ...
+uvicorn lumin.ui.web.app:app --host 0.0.0.0 --port 8000
+```
+
+### email: stevenjaymartin@gmail.com
+
