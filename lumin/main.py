@@ -1,6 +1,13 @@
 import faulthandler
 faulthandler.enable(all_threads=True)
 
+# -------------------------------------------------------------
+# CRITICAL FIX FOR PYTHON 3.14 + WINDOWS + TEXTUAL
+# -------------------------------------------------------------
+import asyncio
+asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# -------------------------------------------------------------
+
 import json
 import argparse
 import logging

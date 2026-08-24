@@ -44,9 +44,10 @@
   "mcp": {
     "server_cmd": [
       "C:/HOME_Scripts/Luminesce/venv/Scripts/python.exe",
-      "C:/HOME_Scripts/Luminesce/lumin/mcp/mcp_server.py"
+      "-m",
+      "lumin.mcp.mcp_server"
     ],
-    "cwd": "C:/HOME_Scripts/Luminesce/lumin/mcp"
+    "cwd": "C:/HOME_Scripts/Luminesce"
   },
 
   "tools": {

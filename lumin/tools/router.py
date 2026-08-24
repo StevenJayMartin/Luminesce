@@ -1,59 +1,40 @@
-# lumin/tools/router.py
+import json
+from lumin.mcp.registry import MCP_TOOLS
 
-def route_intent(intent_json, user_message: str, config=None):
-    if not isinstance(intent_json, dict):
-        return None, {"error": "Invalid intent JSON"}
+# Legacy tool names
+LEGACY_TOOLS = {
+    "weather": "weather_api",
+    "web": "web_search",
+    "wiki": "wikipedia_search",
+    "rag_ingest": "rag_ingest",
+    "rag_query": "rag_query",
+    "chat": "chat_tool",
+    "list": "list_tools",
+    "list_tools": "list_tools",   # ⭐ FIXED
+}
 
-    intent = intent_json.get("intent", "").lower()
-    message = user_message.lower()
+def route_intent(intent_json, user_message):
+    """
+    Hybrid-mode intent router.
+    Supports both legacy tools and MCP tools.
+    """
 
-    # HARD ROUTE: Explicit MCP commands bypass intent classification
-    if message.startswith("mcp_"):
-        return "mcp_tool", {
-            "command": message
-        }
+    intent = intent_json.get("intent")
+    args = intent_json.get("args", {})
 
-    # Explicit override: rag_query
-    if "rag_query" in message:
-        return "rag_query", {
-            "query": intent_json.get("query", ""),
-            "session": intent_json.get("session", "default")
-        }
+    # ------------------------------------------------------------
+    # MCP tool routing
+    # ------------------------------------------------------------
+    if intent in MCP_TOOLS:
+        return intent, args
 
-    # Explicit override: rag_ingest
-    if "rag_ingest" in message:
-        return "rag_ingest", {
-            "url": intent_json.get("url", ""),
-            "config": intent_json.get("config", None)
-        }
+    # ------------------------------------------------------------
+    # Legacy tool routing
+    # ------------------------------------------------------------
+    if intent in LEGACY_TOOLS:
+        return LEGACY_TOOLS[intent], args
 
-    # WEATHER
-    if intent == "weather":
-        return "weather_api", {
-            "location": intent_json.get("location", "")
-        }
-
-    # SEARCH
-    if intent == "search":
-        return "web_search", {
-            "query": intent_json.get("query", "")
-        }
-
-    # KNOWLEDGE / WIKIPEDIA
-    if intent == "knowledge":
-        return "wikipedia_search", {
-            "topic": intent_json.get("topic", "")
-        }
-
-    # LIST TOOLS
-    if intent == "list_tools":
-        return "list_tools", {}
-
-    # CHAT / SMALL TALK
-    if intent == "chat":
-        return "chat_tool", {
-            "message": intent_json.get("message", "")
-        }
-
-    return None, {"error": f"Unknown intent '{intent}'"}
-
+    # ------------------------------------------------------------
+    # Fallback: no tool
+    # ------------------------------------------------------------
+    return "chat_tool", {"message": user_message}

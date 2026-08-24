@@ -1,110 +1,160 @@
 #!/usr/bin/env python3
+"""
+MCP Server — JSON‑RPC compliant
+All debug output goes to stderr.
+Only JSON‑RPC messages go to stdout.
+"""
+
 import sys
+import os
 import json
-import time
+import pkgutil
+import importlib
+import traceback
 
 # ------------------------------------------------------------
-# Tool Registry
+# Helper: debug printing to stderr
+# ------------------------------------------------------------
+def debug(msg):
+    sys.stderr.write(str(msg) + "\n")
+    sys.stderr.flush()
+
+# ------------------------------------------------------------
+# Startup diagnostics
+# ------------------------------------------------------------
+debug("=== MCP SERVER START ===")
+debug(f"Executable: {sys.executable}")
+debug(f"File: {__file__}")
+debug(f"CWD: {os.getcwd()}")
+debug(f"Initial sys.path: {sys.path}")
+
+# ------------------------------------------------------------
+# Add project root to sys.path
+# ------------------------------------------------------------
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, PROJECT_ROOT)
+
+debug(f"Patched sys.path: {sys.path}")
+debug(f"Project root: {PROJECT_ROOT}")
+
+# ------------------------------------------------------------
+# Load MCP tools package
+# ------------------------------------------------------------
+try:
+    import lumin.mcp.tools as tools_pkg
+    debug("Imported lumin.mcp.tools successfully.")
+except Exception as e:
+    debug(f"ERROR: Failed to import lumin.mcp.tools: {e}")
+    traceback.print_exc(file=sys.stderr)
+    sys.exit(1)
+
+# ------------------------------------------------------------
+# Discover tool modules
 # ------------------------------------------------------------
 TOOLS = {}
 
-def register_tool(name, func):
-    TOOLS[name] = func
+debug("Discovering MCP tools...")
 
-def tool_mcp_time(params):
-    return time.time()
+for loader, module_name, is_pkg in pkgutil.iter_modules(tools_pkg.__path__):
+    debug(f"Loading tool module: {module_name}")
+    try:
+        module = importlib.import_module(f"lumin.mcp.tools.{module_name}")
+        TOOLS[module_name] = module
+        debug(f"✓ Loaded: {module_name}")
+    except Exception as e:
+        debug(f"✗ ERROR loading {module_name}: {e}")
+        traceback.print_exc(file=sys.stderr)
 
-def tool_mcp_echo(params):
-    return params.get("message", "")
-
-def tool_mcp_add(params):
-    return params["a"] + params["b"]
-
-register_tool("mcp_time", tool_mcp_time)
-register_tool("mcp_echo", tool_mcp_echo)
-register_tool("mcp_add", tool_mcp_add)
+debug(f"Tool discovery complete. Tools loaded: {list(TOOLS.keys())}")
 
 # ------------------------------------------------------------
-# JSON-RPC helpers
+# JSON‑RPC send helper (stdout ONLY)
 # ------------------------------------------------------------
 def send(obj):
-    sys.stdout.write(json.dumps(obj) + "\n")
-    sys.stdout.flush()
-
-def read():
-    line = sys.stdin.readline()
-    if not line:
-        return None
     try:
-        return json.loads(line)
-    except:
-        return None
+        line = json.dumps(obj)
+        sys.stdout.write(line + "\n")
+        sys.stdout.flush()
+    except Exception as e:
+        debug(f"ERROR sending JSON: {e}")
+        traceback.print_exc(file=sys.stderr)
 
 # ------------------------------------------------------------
-# JSON-RPC dispatcher
+# Tool execution
 # ------------------------------------------------------------
-def handle_request(req):
-    if "id" not in req:
-        return
+def call_tool(name, params):
+    debug(f"call_tool invoked: {name} with params: {params}")
 
-    method = req.get("method")
-    params = req.get("params", {})
+    if name not in TOOLS:
+        return {"error": f"Unknown MCP tool '{name}'"}
 
-    # Discovery
-    if method == "get_tools":
-        return {
-            "jsonrpc": "2.0",
-            "id": req["id"],
-            "result": list(TOOLS.keys())
-        }
+    tool_module = TOOLS[name]
 
-    # Tool execution
-    if method == "call_tool":
-        tool_name = params.get("name")
-        tool_params = params.get("params", {})
-
-        if tool_name not in TOOLS:
-            return {
-                "jsonrpc": "2.0",
-                "id": req["id"],
-                "error": f"Unknown tool '{tool_name}'"
-            }
-
-        try:
-            result = TOOLS[tool_name](tool_params)
-            return {
-                "jsonrpc": "2.0",
-                "id": req["id"],
-                "result": result
-            }
-        except Exception as e:
-            return {
-                "jsonrpc": "2.0",
-                "id": req["id"],
-                "error": str(e)
-            }
-
-    # Unknown method
-    return {
-        "jsonrpc": "2.0",
-        "id": req["id"],
-        "error": f"Unknown method '{method}'"
-    }
+    try:
+        if hasattr(tool_module, "run"):
+            debug(f"Running tool '{name}' via run()")
+            return tool_module.run(params)
+        else:
+            debug(f"Tool '{name}' has no run() function")
+            return {"error": f"Tool '{name}' has no run() function"}
+    except Exception as e:
+        debug(f"ERROR executing tool '{name}': {e}")
+        traceback.print_exc(file=sys.stderr)
+        return {"error": str(e)}
 
 # ------------------------------------------------------------
-# Main loop
+# READY HANDSHAKE (stdout)
 # ------------------------------------------------------------
-def main():
-    send({"jsonrpc": "2.0", "method": "ready", "params": {}})
+debug("Sending ready handshake...")
+send({"jsonrpc": "2.0", "method": "ready", "params": {}})
+debug("Ready handshake sent.")
 
-    while True:
-        req = read()
-        if req is None:
+# ------------------------------------------------------------
+# MAIN JSON‑RPC LOOP
+# ------------------------------------------------------------
+debug("Entering JSON‑RPC loop...")
+
+while True:
+    try:
+        raw = sys.stdin.readline()
+        if not raw:
+            debug("stdin closed — exiting MCP server.")
             break
 
-        resp = handle_request(req)
-        if resp:
-            send(resp)
+        raw = raw.strip()
+        debug(f"Received raw: {raw}")
 
-if __name__ == "__main__":
-    main()
+        try:
+            req = json.loads(raw)
+        except Exception as e:
+            debug(f"Invalid JSON received: {e}")
+            traceback.print_exc(file=sys.stderr)
+            continue
+
+        method = req.get("method")
+        rpc_id = req.get("id")
+
+        debug(f"RPC method: {method}, id: {rpc_id}")
+
+        if method == "get_tools":
+            debug("Handling get_tools")
+            send({"jsonrpc": "2.0", "id": rpc_id, "result": list(TOOLS.keys())})
+            continue
+
+        if method == "call_tool":
+            params = req.get("params", {})
+            name = params.get("name")
+            tool_params = params.get("params", {})
+
+            result = call_tool(name, tool_params)
+            send({"jsonrpc": "2.0", "id": rpc_id, "result": result})
+            continue
+
+        debug(f"Unknown method: {method}")
+        send({"jsonrpc": "2.0", "id": rpc_id, "error": "Unknown method"})
+
+    except Exception as e:
+        debug(f"FATAL MCP LOOP ERROR: {e}")
+        traceback.print_exc(file=sys.stderr)
+
+debug("=== MCP SERVER EXIT ===")

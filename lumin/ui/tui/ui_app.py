@@ -9,7 +9,7 @@ import logging
 import os
 
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, TextArea, Input, Button
+from textual.widgets import Header, Footer, TextArea, Input, Button, Static
 from textual.containers import Container, VerticalScroll
 
 from lumin.core.ollama_client import OllamaChat
@@ -18,14 +18,10 @@ from lumin.tools.registry import get as get_tool, list_tools
 from lumin.tools.router import route_intent
 from lumin.tools.prompts import INTENT_SYSTEM_PROMPT, TOOL_PROMPTS, DEFAULT_TOOL_PROMPT
 from lumin.mcp.registry import MCP_TOOLS
-from lumin.mcp.client import MCPClient
+from lumin.mcp.client import mcp_client
 
 log = logging.getLogger("lumin-ui")
 
-
-# -----------------------------
-# Persistence paths
-# -----------------------------
 STATE_DIR = "lumin/state"
 CHAT_HISTORY_FILE = os.path.join(STATE_DIR, "chat.json")
 
@@ -55,7 +51,7 @@ class LuminApp(App):
             config,
             volume_callback=self._volume_callback_safe,
         )
-        
+
         # -----------------------------
         # MCP Client Initialization
         # -----------------------------
@@ -63,17 +59,13 @@ class LuminApp(App):
         server_cmd = mcp_cfg.get("server_cmd")
         cwd = mcp_cfg.get("cwd")
 
-        # Force correct type
         if isinstance(server_cmd, str):
-            # Try to parse JSON list if it was stringified
             try:
                 server_cmd = json.loads(server_cmd)
             except Exception:
-                # Fallback: split string
-                server_cmd = server_cmd.split()    
-        
+                server_cmd = server_cmd.split()
+
         if server_cmd:
-            from lumin.mcp.client import mcp_client
             self.mcp_client = mcp_client
         else:
             self.mcp_client = None
@@ -135,8 +127,12 @@ class LuminApp(App):
 
     def compose(self) -> ComposeResult:
         yield Header()
-
         with Container():
+
+            # MCP status line — appears immediately
+            self.mcp_status = Static("🔄 Loading MCP server…", id="mcp-status")
+            yield self.mcp_status
+
             with VerticalScroll():
                 self.chat_area = TextArea()
                 self.chat_area.disabled = True
@@ -151,27 +147,63 @@ class LuminApp(App):
 
         yield Footer()
 
-    async def on_mount(self) -> None:
+    # -----------------------------
+    # UI is now visible — start MCP in background
+    # -----------------------------
+    async def on_ready(self):
         self.append_chat("Connected to Lumin\n")
 
         self._load_chat_history()
         self._render_chat_history()
 
+        asyncio.create_task(self._start_mcp())
+
         if self.always_listen:
             threading.Thread(
-                target=self._always_listen_loop, daemon=True
+                target=self._always_listen_loop,
+                daemon=True
             ).start()
 
-        # -----------------------------
-        # Start MCP Client
-        # -----------------------------
-        if self.mcp_client:
-            try:
-                await self.mcp_client.start()
-                self.append_chat("🔌 MCP Connected\n")
-            except Exception as e:
-                self.append_chat(f"⚠️ MCP Failed to start: {e}\n")
+    # -----------------------------
+    # MCP startup logic (non-blocking)
+    # -----------------------------
+    async def _start_mcp(self):
+        if not self.mcp_client:
+            self.mcp_status.update("⚠ MCP client missing")
+            return
 
+        try:
+            await self.mcp_client.start()
+            self.mcp_status.update("🔌 MCP Connected")
+
+            try:
+                resp = self.mcp_client.send_jsonrpc_raw({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "get_tools"
+                })
+
+                if isinstance(resp, dict) and "result" in resp:
+                    for name in resp["result"]:
+                        MCP_TOOLS[name] = {"description": "(MCP tool)"}
+
+                    self.mcp_status.update(
+                        f"🔧 MCP Tools Loaded: {len(MCP_TOOLS)}"
+                    )
+                else:
+                    self.mcp_status.update(
+                        f"⚠ MCP get_tools returned unexpected: {resp}"
+                    )
+
+            except Exception as e:
+                self.mcp_status.update(f"⚠ MCP Tool Discovery Failed: {e}")
+
+        except Exception as e:
+            self.mcp_status.update(f"⚠ MCP Failed to start: {e}")
+
+    # -----------------------------
+    # Button handler
+    # -----------------------------
     async def on_button_pressed(self, event: Button.Pressed):
         if event.button.id == "ptt-button":
             self._start_stt()
@@ -184,6 +216,9 @@ class LuminApp(App):
     def _volume_callback_safe(self, level: float):
         pass
 
+    # -----------------------------
+    # Input handler
+    # -----------------------------
     async def on_input_submitted(self, message: Input.Submitted) -> None:
         user_text = message.value.strip()
         if not user_text:
@@ -192,19 +227,21 @@ class LuminApp(App):
         self.append_chat(f"You: {user_text}\n")
         self.input_box.value = ""
         self.chat_history.append({"role": "user", "content": user_text})
-        
-        # -----------------------------------------
+
         # RAW JSON-RPC MCP COMMAND
-        # -----------------------------------------
         if user_text.startswith("mcp_rpc "):
+            if not self.mcp_client:
+                self.append_chat("⚠ MCP not configured.\n")
+                return
+
             try:
                 payload = user_text[len("mcp_rpc "):].strip()
                 req = json.loads(payload)
 
-                # IMPORTANT: send_jsonrpc_raw is sync, do NOT await it
                 result = self.mcp_client.send_jsonrpc_raw(req)
-
-                self.append_chat(f"🔧 MCP JSON-RPC:\n{json.dumps(result, indent=2)}\n\n")
+                self.append_chat(
+                    f"🔧 MCP JSON-RPC:\n{json.dumps(result, indent=2)}\n\n"
+                )
             except Exception as e:
                 self.append_chat(f"Error parsing JSON-RPC: {e}\n")
             return
@@ -212,7 +249,9 @@ class LuminApp(App):
         if user_text.startswith("ingest "):
             url = user_text.split(" ", 1)[1].strip()
             results = await self._execute_tool("rag_ingest", {"url": url})
-            self.append_chat(f"🔧 RAG Ingest:\n{json.dumps(results, indent=2)}\n\n")
+            self.append_chat(
+                f"🔧 RAG Ingest:\n{json.dumps(results, indent=2)}\n\n"
+            )
             return
 
         try:
@@ -225,24 +264,18 @@ class LuminApp(App):
     # -----------------------------
     async def _execute_tool(self, name, args):
 
-        # ⭐ SPECIAL CASE: MCP tools
         if name == "mcp_tool":
             tool = get_tool(name)
             return tool(args["command"])
-  
-        if name == "list_tools":
-            # Local tools
-            local = list_tools()
 
-            # MCP tools
+        if name == "list_tools":
+            local = list_tools()
             mcp = [
                 {"name": n, "description": meta.get("description", "")}
                 for n, meta in MCP_TOOLS.items()
             ]
-
-            # Unified list
             return {"tools": local + mcp}
-   
+
         tool = get_tool(name)
         if not tool:
             return {"error": f"Unknown tool '{name}'"}
@@ -260,19 +293,16 @@ class LuminApp(App):
             return {"error": "Missing 'url' for rag_ingest"}
 
         try:
-            # Async tools (rag_query, rag_ingest)
             if asyncio.iscoroutinefunction(tool.__call__):
                 return await tool(**args)
-
-            # Sync tools
             return tool(config=self.config, **args)
-
         except Exception as e:
             return {"error": str(e)}
 
-
+    # -----------------------------
+    # Format tool results
+    # -----------------------------
     def _format_tool_results(self, tool_name, results):
-
         if tool_name == "weather_api":
             if "error" in results:
                 return f"🌦 Weather Error: {results['error']}\n\n"
@@ -314,7 +344,7 @@ class LuminApp(App):
         return f"[Tool '{tool_name}' returned: {results}]\n\n"
 
     # -----------------------------
-    # Continuation prompt
+    # Continue LLM with tool results
     # -----------------------------
     async def _continue_llm_with_tool_results(self, tool_name, results):
         tool_prompt = TOOL_PROMPTS.get(tool_name, DEFAULT_TOOL_PROMPT)
@@ -436,41 +466,55 @@ class LuminApp(App):
                 {"role": "assistant", "content": fallback}
             )
             return
-        
+
         user_message = self.chat_history[-1]["content"]
 
         if self.tools_enabled and intent_json:
             try:
-                    
                 tool_name, tool_args = route_intent(intent_json, user_message)
 
                 block = render_tool_call_block(tool_name, tool_args)
                 self.append_chat(block)
 
-                # -----------------------------
                 # MCP TOOL EXECUTION
-                # -----------------------------
-                if tool_name in MCP_TOOLS:
+                if tool_name in MCP_TOOLS and self.mcp_client:
                     try:
-                        tool_results = await self.mcp_client.execute(tool_name, tool_args)
+                        req = {
+                            "jsonrpc": "2.0",
+                            "id": 2,
+                            "method": "call_tool",
+                            "params": {
+                                "name": tool_name,
+                                "params": tool_args,
+                            },
+                        }
+                        tool_results = self.mcp_client.send_jsonrpc_raw(req)
                     except Exception as e:
-                        tool_results = {"error": f"MCP execution failed: {e}"}
+                        tool_results = {
+                            "error": f"MCP execution failed: {e}"
+                        }
 
-                    results_block = self._format_tool_results(tool_name, tool_results)
+                    results_block = self._format_tool_results(
+                        tool_name, tool_results
+                    )
                     self.append_chat(results_block)
 
-                    await self._continue_llm_with_tool_results(tool_name, tool_results)
+                    await self._continue_llm_with_tool_results(
+                        tool_name, tool_results
+                    )
                     return
 
-                # -----------------------------
-                # LOCAL TOOL EXECUTION (existing)
-                # -----------------------------
+                # LOCAL TOOL EXECUTION
                 tool_results = await self._execute_tool(tool_name, tool_args)
 
-                results_block = self._format_tool_results(tool_name, tool_results)
+                results_block = self._format_tool_results(
+                    tool_name, tool_results
+                )
                 self.append_chat(results_block)
 
-                await self._continue_llm_with_tool_results(tool_name, tool_results)
+                await self._continue_llm_with_tool_results(
+                    tool_name, tool_results
+                )
                 return
 
             except Exception as e:
@@ -551,28 +595,3 @@ class LuminApp(App):
 
         if not text:
             return
-
-        self.call_from_thread(
-            lambda: self.append_chat(f"You: {text}\n")
-        )
-        self.chat_history.append({"role": "user", "content": text})
-
-        self.call_from_thread(
-            lambda: self.run_worker(self._stream_llm(text))
-        )
-
-    # -----------------------------
-    # Exit handler
-    # -----------------------------
-    def on_exit(self):
-        self._stop_flag = True
-        self._save_chat_history()
-        self.tts.stop()
-        # -----------------------------
-        # Stop MCP Client
-        # -----------------------------
-        if self.mcp_client:
-            try:
-                self.mcp_client.stop()
-            except Exception:
-                pass
