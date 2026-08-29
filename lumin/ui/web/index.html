@@ -272,6 +272,18 @@
     <button id="upload-btn">+</button>
 </div>
 
+<div id="reasoning-panel" style="display:none; margin-top: 20px;">
+    <h3>Agent Reasoning</h3>
+    <pre id="reasoning-text" style="
+        background-color: #1e1e1e;
+        color: #cfcfcf;
+        padding: 10px;
+        border-radius: 6px;
+        white-space: pre-wrap;
+        font-size: 14px;
+    "></pre>
+</div>
+
 <script>
 let config = null;
 let configLoaded = false;
@@ -535,12 +547,19 @@ function connectWS() {
         const data = JSON.parse(event.data);
         session = data.session;
 
+        // Handle reasoning FIRST
+        if (data.reasoning) {
+            const panel = document.getElementById("reasoning-panel");
+            const text = document.getElementById("reasoning-text");
+            panel.style.display = "block";
+            text.innerText = JSON.stringify(data.reasoning, null, 2);
+        }
+
         const isStream = data.stream;
         const chunk = data.reply || "";
-       
+
         if (!isStream) {
             hideTyping();
-            // Final message already rendered via accumulated updates
             currentAssistantDiv = null;
             accumulated = "";
             return;
@@ -556,6 +575,7 @@ function connectWS() {
         }
     };
 }
+
 
 async function sendGenerate(text) {
     showTyping();
