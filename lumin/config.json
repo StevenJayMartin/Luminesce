@@ -4,6 +4,9 @@
     "model": "llama3.2",
     "mode": "chat"
   },
+    "reasoning": {
+    "model": "llama3.2"
+  },
   "personalities": {
     "default": "prompts/default.txt",
     "teacher": "prompts/teacher.txt",

@@ -235,21 +235,27 @@ Boundaries:
 """
 
 REASONING_PROMPT = """
-You are a reasoning engine. Your job is to analyze the user's message and produce structured JSON.
+You are a reasoning engine. Respond ONLY with valid JSON. 
+No prose. No explanations. No markdown. No commentary. 
+Your response MUST begin with '{' and end with '}'.
 
-Your JSON MUST contain:
+JSON schema:
 {
-  "thought": "Your chain-of-thought (concise)",
-  "intent": "The user's intent in 1–3 words",
-  "plan": ["Step 1", "Step 2", ...],
+  "thought": "string",
+  "intent": "string",
+  "plan": ["string"],
   "decision": "none | respond | call_tool"
 }
 
 Rules:
-- Be concise.
-- Do NOT include markdown.
-- Do NOT include commentary.
-- Output ONLY valid JSON.
+- Do NOT add any text before or after the JSON.
+- Do NOT include backticks.
+- Do NOT include comments.
+- Do NOT explain the JSON.
+- Do NOT apologize.
+- Do NOT add extra fields.
+- Do NOT add trailing commas.
+- Produce concise values.
 """
 
 # ------------------------------------------------------------
@@ -376,14 +382,9 @@ def call_rag_server_safe(query: str, session_id: str) -> str | None:
 # ------------------------------------------------------------
 
 def run_reasoning_module(user_message: str) -> dict:
-    """
-    Calls a small reasoning model to produce structured JSON.
-    Falls back to a safe placeholder if anything goes wrong.
-    """
-
     try:
         payload = {
-            "model": "phi3-mini",   # or any small model you have locally
+            "model": config["reasoning"]["model"],
             "prompt": f"{REASONING_PROMPT}\nUser message: {user_message}\nJSON:",
             "stream": False
         }
@@ -395,7 +396,15 @@ def run_reasoning_module(user_message: str) -> dict:
 
         raw = r.json().get("response", "").strip()
 
-        # Try to parse JSON
+        print("RAW REASONING OUTPUT:", raw)
+
+        # Extract JSON substring
+        start = raw.find("{")
+        end = raw.rfind("}")
+
+        if start != -1 and end != -1:
+            raw = raw[start:end+1]
+
         return json.loads(raw)
 
     except Exception as e:
@@ -406,6 +415,27 @@ def run_reasoning_module(user_message: str) -> dict:
             "plan": ["No plan — fallback."],
             "decision": "none"
         }
+
+
+# ------------------------------------------------------------
+# DECISION ROUTER (Non-action version)
+# ------------------------------------------------------------
+
+def route_decision(reasoning: dict) -> str:
+    """
+    Inspect the reasoning output and return a simple string
+    describing what the agent *would* do.
+    """
+    intent = reasoning.get("intent", "unknown")
+    decision = reasoning.get("decision", "none")
+
+    if decision == "respond":
+        return f"Agent would respond normally (intent: {intent})."
+
+    if decision == "call_tool":
+        return f"Agent would call a tool (intent: {intent})."
+
+    return f"No action taken (intent: {intent})."
 
 
 @app.websocket("/ws/chat")
@@ -431,6 +461,7 @@ async def chat_ws(ws: WebSocket):
             data = await ws.receive_json()
             text = data.get("text", "")
             reasoning = run_reasoning_module(text)
+            decision_result = route_decision(reasoning)
 
             # Store user message
             conversations[session_id].append({"role": "user", "content": text})
@@ -493,7 +524,8 @@ async def chat_ws(ws: WebSocket):
                 await ws.send_json({
                     "session": session_id,
                     "reply": full_reply,
-                    "reasoning": "reasoning",
+                    "reasoning": reasoning,
+                    "decision_result": decision_result,
                     "stream": False
                 })
 

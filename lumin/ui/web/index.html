@@ -555,6 +555,11 @@ function connectWS() {
             text.innerText = JSON.stringify(data.reasoning, null, 2);
         }
 
+        // --- Decision router output (for now, console only) ---
+        if (data.decision_result) {
+            console.log("Decision:", data.decision_result);
+        }
+
         const isStream = data.stream;
         const chunk = data.reply || "";
 
@@ -575,7 +580,6 @@ function connectWS() {
         }
     };
 }
-
 
 async function sendGenerate(text) {
     showTyping();
