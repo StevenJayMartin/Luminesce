@@ -329,7 +329,21 @@ async def generate(req: dict):
     model_name = config["ollama"]["model"]
     personality_prompt = load_personality_prompt(model_name)
 
-    prompt = f"{personality_prompt.strip()}\n\nUser: {text}\nAssistant:"
+    #- prompt = f"{personality_prompt.strip()}\n\nUser: {text}\nAssistant:"
+    session_id = "default"
+    if session_id not in conversations:
+        conversations[session_id] = []
+
+    # Store the new user message
+    conversations[session_id].append({"role": "user", "content": text})
+
+    # Build transcript
+    transcript = personality_prompt.strip() + "\n\n"
+    for m in conversations[session_id]:
+        transcript += f"{m['role'].capitalize()}: {m['content']}\n"
+    transcript += "Assistant:"
+
+    prompt = transcript
 
     payload = {
         "model": model_name,

@@ -512,7 +512,9 @@ async function loadConfig() {
     await refreshModelInfo();
     setInterval(refreshModelInfo, 10000);
 
+
     if (config.ollama.mode === "chat") connectWS();
+    if (config.ollama.mode === "generate") connectWS();
 }
 
 function connectWS() {
