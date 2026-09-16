@@ -15,6 +15,7 @@ import os
 
 from lumin.ui.tui.ui_app import LuminApp
 
+
 # -----------------------------
 # LOGGING SETUP
 # -----------------------------
@@ -25,11 +26,9 @@ logging.basicConfig(
 )
 log = logging.getLogger("main")
 
+# Ensure logs directory exists
 os.makedirs("logs", exist_ok=True)
 
-# -----------------------------
-# CONFIG LOADING
-# -----------------------------
 def load_config(path: str) -> dict:
     if not os.path.exists(path):
         raise FileNotFoundError(f"Config file not found: {path}")
@@ -37,36 +36,21 @@ def load_config(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         config = json.load(f)
 
-    # Ensure sections exist
-    config.setdefault("backend", {})
+    # Ensure grouped sections exist
+    config.setdefault("ollama", {})
     config.setdefault("voice", {})
     config.setdefault("tools", {})
     config.setdefault("ui", {})
     config.setdefault("api", {})
     config.setdefault("tts", {})
-    config.setdefault("reasoning", {})
-    config.setdefault("rag", {})
-    config.setdefault("ollama", {})
-
-    backend = config["backend"]
-
+    
+    
     # -----------------------------
-    # MAP BACKEND → OLLAMA
+    # OLLAMA DEFAULTS
     # -----------------------------
-    config["ollama"]["url"] = backend.get("ollama_url", "http://localhost:11434")
-    config["ollama"]["model"] = backend.get("model", "llama3.2")
-    config["ollama"]["mode"] = backend.get("mode", "chat")
-
-    # -----------------------------
-    # MAP BACKEND → REASONING
-    # -----------------------------
-    config["reasoning"]["model"] = backend.get("reasoning_model", config["ollama"]["model"])
-
-    # -----------------------------
-    # MAP BACKEND → RAG
-    # -----------------------------
-    config["rag"]["enabled"] = backend.get("rag_enabled", False)
-    config["rag"]["url"] = backend.get("rag_url", "http://localhost:8001/rag")
+    ollama_cfg = config["ollama"]
+    ollama_cfg.setdefault("url", "http://localhost:11434")
+    ollama_cfg.setdefault("model", "llama3.2:latest")
 
     # -----------------------------
     # VOICE DEFAULTS
@@ -106,7 +90,7 @@ def load_config(path: str) -> dict:
     api_cfg.setdefault("enabled", False)
     api_cfg.setdefault("host", "0.0.0.0")
     api_cfg.setdefault("port", 8000)
-
+    
     # -----------------------------
     # TTS DEFAULTS
     # -----------------------------
@@ -118,19 +102,44 @@ def load_config(path: str) -> dict:
 
     return config
 
-# -----------------------------
-# CLI ARGUMENTS
-# -----------------------------
 def parse_args():
     parser = argparse.ArgumentParser(description="Lumin — Local Light Bulb Assistant")
-    parser.add_argument("-c", "--config", default="config.json")
-    parser.add_argument("-m", "--model")
-    parser.add_argument("--llm-mode", choices=["chat", "generate"])
-    parser.add_argument("--ollama")
-    parser.add_argument("--mic", type=int)
-    parser.add_argument("--listen-mode", choices=["push_to_talk", "always"])
-    parser.add_argument("--mode", choices=["tui"], default="tui")
+    parser.add_argument(
+        "-c", "--config",
+        default="config.json",
+        help="Path to config file (default: config.json)"
+    )
+    parser.add_argument(
+        "-m", "--model",
+        help="Override model name from config.json"
+    )
+    parser.add_argument(
+        "--llm-mode",
+        choices=["chat", "generate"],
+        help="Override Ollama mode (chat or generate)"
+    )
+    parser.add_argument(
+        "--ollama",
+        help="Override Ollama base URL (e.g. http://localhost:11434)"
+    )
+    parser.add_argument(
+        "--mic",
+        type=int,
+        help="Override microphone device index"
+    )
+    parser.add_argument(
+        "--listen-mode",
+        choices=["push_to_talk", "always"],
+        help="Override listen_mode from config.json"
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["tui"],
+        default="tui",
+        help="Run mode (currently only 'tui')"
+    )
     return parser.parse_args()
+
 
 # -----------------------------
 # MAIN ENTRY
@@ -139,12 +148,16 @@ def main():
     args = parse_args()
     log.debug(f"Args: {args}")
 
-    config = load_config(args.config)
+    try:
+        config = load_config(args.config)
+    except Exception as e:
+        log.exception("Failed to load config: %s", e)
+        raise
 
-    # CLI overrides
+    # apply CLI overrides
     if args.model:
         config["ollama"]["model"] = args.model
-
+        
     if args.llm_mode:
         config["ollama"]["mode"] = args.llm_mode
 
@@ -160,10 +173,11 @@ def main():
     # -----------------------------
     # TTS ENGINE LOADING
     # -----------------------------
-    tts_cfg = config["tts"]
+    tts_cfg = config.get("tts", {})
 
-    if not tts_cfg.get("enabled", True):
+    if not tts_cfg.get("enabled", True):    
         tts_engine = None
+
     else:
         engine = tts_cfg.get("engine", "piper")
 
@@ -173,11 +187,14 @@ def main():
                 piper_path=tts_cfg["piper_path"],
                 model_path=tts_cfg["model_path"]
             )
+
         elif engine == "pyttsx3":
             from lumin.voice.tts_pyttsx3 import TTS
             tts_engine = TTS()
+
         else:
             raise ValueError(f"Unknown TTS engine: {engine}")
+
 
     log.debug(f"Final config: {config}")
 
@@ -186,6 +203,7 @@ def main():
         app.run()
     else:
         log.error(f"Unsupported mode: {args.mode}")
+
 
 if __name__ == "__main__":
     main()

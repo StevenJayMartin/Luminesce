@@ -1,3 +1,4 @@
+from lumin.tools.intent_map import map_intent
 from lumin.tools.wikipedia import wikipedia_search
 from lumin.tools.weather_api import weather_api
 from lumin.tools.web_search import web_search
@@ -9,6 +10,12 @@ from lumin.tools.rag.rag_query_tool import RagQueryTool
 from lumin.mcp.client import mcp_client
 
 import requests
+
+def get_tool(intent: str):
+    name = map_intent(intent)
+    if not name:
+        return None
+    return TOOLS.get(name)
 
 def rag_ingest(url: str, config=None):
     import requests

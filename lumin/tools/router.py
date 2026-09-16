@@ -23,6 +23,24 @@ def route_intent(intent_json, user_message):
     args = intent_json.get("args", {})
 
     # ------------------------------------------------------------
+    # Weather intent (custom)
+    # ------------------------------------------------------------
+    if intent == "weather":
+        location = intent_json.get("location") or args.get("location") or user_message
+
+        import re
+        # Fix merged tokens like "BumpassVirginia" → "Bumpass Virginia"
+        location = re.sub(r"([a-z])([A-Z])", r"\1 \2", location)
+
+        # Fix missing spaces after commas
+        location = location.replace(",", ", ")
+
+        # Collapse double spaces
+        location = re.sub(r"\s{2,}", " ", location).strip()
+
+        return "weather_api", {"location": location}
+
+    # ------------------------------------------------------------
     # MCP tool routing
     # ------------------------------------------------------------
     if intent in MCP_TOOLS:
@@ -35,6 +53,13 @@ def route_intent(intent_json, user_message):
         return LEGACY_TOOLS[intent], args
 
     # ------------------------------------------------------------
-    # Fallback: no tool
+    # Fallback: always provide a valid message
     # ------------------------------------------------------------
-    return "chat_tool", {"message": user_message}
+    fallback_message = (
+        intent_json.get("message")
+        or intent_json.get("location")
+        or user_message
+        or "continue"
+    )
+
+    return "chat_tool", {"message": fallback_message}

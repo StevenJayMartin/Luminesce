@@ -19,6 +19,8 @@ from lumin.tools.router import route_intent
 from lumin.tools.prompts import INTENT_SYSTEM_PROMPT, TOOL_PROMPTS, DEFAULT_TOOL_PROMPT
 from lumin.mcp.registry import MCP_TOOLS
 from lumin.mcp.client import mcp_client
+from lumin.agent.tools import execute_tool, format_tool_results
+from lumin.agent.continue_llm import continue_llm_with_tool_results
 
 log = logging.getLogger("lumin-ui")
 
@@ -248,7 +250,16 @@ class LuminApp(App):
 
         if user_text.startswith("ingest "):
             url = user_text.split(" ", 1)[1].strip()
-            results = await self._execute_tool("rag_ingest", {"url": url})
+
+            from lumin.agent.tools import execute_tool
+
+            results = await execute_tool(
+                "rag_ingest",
+                {"url": url},
+                config=self.config,
+                mcp_client=self.mcp_client
+            )
+            
             self.append_chat(
                 f"🔧 RAG Ingest:\n{json.dumps(results, indent=2)}\n\n"
             )
@@ -259,134 +270,6 @@ class LuminApp(App):
         except Exception as e:
             self.append_chat(f"Error: {e}\n")
 
-    # -----------------------------
-    # Tool execution
-    # -----------------------------
-    async def _execute_tool(self, name, args):
-
-        if name == "mcp_tool":
-            tool = get_tool(name)
-            return tool(args["command"])
-
-        if name == "list_tools":
-            local = list_tools()
-            mcp = [
-                {"name": n, "description": meta.get("description", "")}
-                for n, meta in MCP_TOOLS.items()
-            ]
-            return {"tools": local + mcp}
-
-        tool = get_tool(name)
-        if not tool:
-            return {"error": f"Unknown tool '{name}'"}
-
-        if name == "weather_api" and not args.get("location"):
-            return {"error": "Missing 'location' for weather_api"}
-
-        if name == "web_search" and not args.get("query"):
-            return {"error": "Missing 'query' for web_search"}
-
-        if name == "wikipedia_search" and not args.get("topic"):
-            return {"error": "Missing 'topic' for wikipedia_search"}
-
-        if name == "rag_ingest" and not args.get("url"):
-            return {"error": "Missing 'url' for rag_ingest"}
-
-        try:
-            if asyncio.iscoroutinefunction(tool.__call__):
-                return await tool(**args)
-            return tool(config=self.config, **args)
-        except Exception as e:
-            return {"error": str(e)}
-
-    # -----------------------------
-    # Format tool results
-    # -----------------------------
-    def _format_tool_results(self, tool_name, results):
-        if tool_name == "weather_api":
-            if "error" in results:
-                return f"🌦 Weather Error: {results['error']}\n\n"
-            return (
-                "🌦 Weather Raw Data:\n"
-                f"{json.dumps(results, indent=2)}\n\n"
-            )
-
-        if tool_name == "wikipedia_search":
-            if "error" in results:
-                return f"📘 Wikipedia Error: {results['error']}\n\n"
-            return (
-                "📘 Wikipedia Summary:\n"
-                f"• Title: {results.get('title', '')}\n"
-                f"• Description: {results.get('description', '')}\n"
-                f"• Extract: {results.get('extract', '')}\n"
-                f"• URL: {results.get('url', '')}\n\n"
-            )
-
-        if tool_name == "web_search":
-            if isinstance(results, str):
-                return f"🔎 Web Search:\n{results}\n\n"
-            return f"🔎 Web Search:\n{results}\n\n"
-
-        if tool_name == "list_tools":
-            tools = results.get("tools", [])
-            if not tools:
-                return "🧰 Available Tools:\n• [no tools registered]\n\n"
-            lines = ["🧰 Available Tools:"]
-            for t in tools:
-                name = t.get("name", "")
-                desc = t.get("description", "")
-                lines.append(f"• {name} — {desc}")
-            return "\n".join(lines) + "\n\n"
-
-        if tool_name == "chat_tool":
-            return f"💬 Small Talk:\n{results.get('response', '')}\n\n"
-
-        return f"[Tool '{tool_name}' returned: {results}]\n\n"
-
-    # -----------------------------
-    # Continue LLM with tool results
-    # -----------------------------
-    async def _continue_llm_with_tool_results(self, tool_name, results):
-        tool_prompt = TOOL_PROMPTS.get(tool_name, DEFAULT_TOOL_PROMPT)
-
-        messages = [
-            {"role": "system", "content": tool_prompt},
-            {
-                "role": "user",
-                "content": (
-                    f"Tool '{tool_name}' returned the following data:\n"
-                    f"{json.dumps(results, indent=2)}\n\n"
-                    "Please answer the user's question using this information."
-                ),
-            },
-        ]
-
-        self.append_chat("Lumin: ")
-
-        response_parts = []
-
-        def on_token(token: str):
-            response_parts.append(token)
-            self.append_chat(token)
-
-            if self.stream_to_terminal:
-                sys.__stdout__.write(token)
-                sys.__stdout__.flush()
-
-        await asyncio.to_thread(self.llm.stream, messages, on_token)
-
-        full_response = "".join(response_parts).strip()
-        self.append_chat("\n")
-        self.chat_history.append(
-            {"role": "assistant", "content": full_response}
-        )
-
-        if self.tts_enabled and full_response:
-            threading.Thread(
-                target=self.tts.speak,
-                args=(full_response,),
-                daemon=True,
-            ).start()
 
     # -----------------------------
     # Intent extraction + tool routing
@@ -493,27 +376,41 @@ class LuminApp(App):
                         tool_results = {
                             "error": f"MCP execution failed: {e}"
                         }
-
-                    results_block = self._format_tool_results(
-                        tool_name, tool_results
-                    )
+                    
+                    results_block = format_tool_results(tool_name, tool_results)
+                    
                     self.append_chat(results_block)
 
-                    await self._continue_llm_with_tool_results(
-                        tool_name, tool_results
+                    await continue_llm_with_tool_results(
+                        llm=self.llm,
+                        tool_name=tool_name,
+                        results=tool_results,
+                        append_fn=self.append_chat,
+                        stream_to_terminal=self.stream_to_terminal,
+                        tts=self.tts if self.tts_enabled else None
                     )
+
                     return
 
-                # LOCAL TOOL EXECUTION
-                tool_results = await self._execute_tool(tool_name, tool_args)
-
-                results_block = self._format_tool_results(
-                    tool_name, tool_results
+                # LOCAL TOOL EXECUTION                
+                tool_results = await execute_tool(
+                    tool_name,
+                    tool_args,
+                    config=self.config,
+                    mcp_client=self.mcp_client
                 )
-                self.append_chat(results_block)
 
-                await self._continue_llm_with_tool_results(
-                    tool_name, tool_results
+                results_block = format_tool_results(tool_name, tool_results)
+                
+                self.append_chat(results_block)
+                
+                await continue_llm_with_tool_results(
+                    llm=self.llm,
+                    tool_name=tool_name,
+                    results=tool_results,
+                    append_fn=self.append_chat,
+                    stream_to_terminal=self.stream_to_terminal,
+                    tts=self.tts if self.tts_enabled else None
                 )
                 return
 
