@@ -414,8 +414,9 @@ class LuminApp(App):
                 )
                 return
 
-            except Exception as e:
-                log.error(f"Router failed: {e}")
+            except Exception
+                log.debug(f"Ignored continuation exception: {e}")
+                return
 
         if not response_parts:
             fallback = (
