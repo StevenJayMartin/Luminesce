@@ -88,18 +88,18 @@ def root():
 def get_config():
     return {
         "ollama": {
-            "url": config["ollama"]["url"],
-            "model": config["ollama"]["model"],
-            "mode": config["ollama"].get("mode", "chat")
+            "url": config["backend"]["ollama_url"],
+            "model": config["backend"]["model"],
+            "mode": "chat"
         },
-        "ui": config["ui"]
+        "ui": config["ui_web"]
     }
 
 @app.get("/api/personalities")
 def list_personalities():
     personalities = config.get("personalities", {})
     model_map = config.get("model_personality_map", {})
-    current_model = config["ollama"]["model"]
+    current_model = config["backend"]["model"]
     current_personality = model_map.get(current_model, "default")
 
     return {
@@ -111,7 +111,7 @@ def list_personalities():
 
 @app.post("/api/set-personality")
 async def set_personality(req: dict):
-    model_name = req.get("model") or config["ollama"]["model"]
+    model_name = req.get("model") or config["backend"]["model"]
     personality_name = req.get("personality")
 
     if not personality_name:
@@ -136,7 +136,7 @@ async def set_personality(req: dict):
 @app.get("/api/models")
 def list_models():
     try:
-        r = requests.get(f"{config['ollama']['url']}/api/tags")
+        r = requests.get(f"{config['backend']['ollama_url']}/api/tags")
         data = r.json()
         models = [m.get("name") for m in data.get("models", [])]
         return {"models": models}
@@ -147,13 +147,13 @@ def list_models():
 @app.get("/api/model-info")
 def model_info():
     info = {
-        "model": config["ollama"]["model"],
-        "backend": config["ollama"]["url"],
+        "model": config["backend"]["model"],
+        "backend": config["backend"]["ollama_url"],
     }
 
     # Ollama ps
     try:
-        r = requests.get(f"{config['ollama']['url']}/api/ps")
+        r = requests.get(f"{config['backend']['ollama_url']}/api/ps")
         ps = r.json()
         info["running"] = ps.get("models", [])
     except Exception as e:
@@ -190,7 +190,7 @@ async def set_model(req: dict):
         return {"ok": False, "error": "No model provided"}
 
     # update in-memory config
-    config["ollama"]["model"] = new_model
+    config["backend"]["model"] = new_model
 
     # write back to config.json
     try:
@@ -326,7 +326,7 @@ async def generate(req: dict):
     if not text:
         return {"reply": ""}
 
-    model_name = config["ollama"]["model"]
+    model_name = config["backend"]["model"]
     personality_prompt = load_personality_prompt(model_name)
 
     #- prompt = f"{personality_prompt.strip()}\n\nUser: {text}\nAssistant:"
@@ -353,7 +353,7 @@ async def generate(req: dict):
 
     try:
         r = requests.post(
-            f"{config['ollama']['url']}/api/generate",
+            f"{config['backend']['ollama_url']}/api/generate",
             json=payload
         )
 
@@ -398,13 +398,13 @@ def call_rag_server_safe(query: str, session_id: str) -> str | None:
 def run_reasoning_module(user_message: str) -> dict:
     try:
         payload = {
-            "model": config["reasoning"]["model"],
+            "model": config["backend"]["reasoning_model"],
             "prompt": f"{REASONING_PROMPT}\nUser message: {user_message}\nJSON:",
             "stream": False
         }
 
         r = requests.post(
-            f"{config['ollama']['url']}/api/generate",
+            f"{config['backend']['ollama_url']}/api/generate",
             json=payload
         )
 
@@ -458,7 +458,7 @@ async def chat_ws(ws: WebSocket):
     session_id = str(uuid.uuid4())
     conversations[session_id] = []
 
-    model_name = config["ollama"]["model"]
+    model_name = config["backend"]["model"]
     personality_prompt = load_personality_prompt(model_name)
 
     try:
@@ -504,7 +504,7 @@ async def chat_ws(ws: WebSocket):
 
             try:
                 r = requests.post(
-                    f"{config['ollama']['url']}/api/generate",
+                    f"{config['backend']['ollama_url']}/api/generate",
                     json=payload,
                     stream=True
                 )

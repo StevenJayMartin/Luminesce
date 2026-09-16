@@ -522,6 +522,7 @@ function connectWS() {
     wsConnecting = true;
     setConnectionStatus("connecting");
 
+    console.log("WS location, ${location.host}");
     ws = new WebSocket(`ws://${location.host}/ws/chat`);
 
     ws.onopen = () => {
