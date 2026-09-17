@@ -3,11 +3,17 @@ import json
 import uuid
 import requests
 import subprocess
+import asyncio
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+
+from lumin.tools.prompts import INTENT_SYSTEM_PROMPT
+from lumin.tools.router import route_intent
+from lumin.agent.tools import execute_tool, format_tool_results
+from lumin.agent.continue_llm import continue_llm_with_tool_results
 
 # ------------------------------------------------------------
 # PATHS
@@ -26,6 +32,7 @@ with open(CONFIG_PATH, "r") as f:
 
 PERSONALITY_DIR = os.path.join(os.path.dirname(CONFIG_PATH), "prompts")
 
+
 def load_personality_prompt(model_name: str) -> str:
     personalities = config.get("personalities", {})
     model_map = config.get("model_personality_map", {})
@@ -42,7 +49,8 @@ def load_personality_prompt(model_name: str) -> str:
             return f.read()
     except Exception as e:
         print(f"ERROR loading personality '{personality_name}':", e)
-        return SYSTEM_PROMPT   
+        return SYSTEM_PROMPT
+
 
 def call_rag_server(query: str, session_id: str) -> str | None:
     rag_cfg = config.get("rag", {})
@@ -60,6 +68,7 @@ def call_rag_server(query: str, session_id: str) -> str | None:
     except Exception as e:
         print("RAG unavailable:", e)
         return None
+
 
 # ------------------------------------------------------------
 # FASTAPI APP
@@ -84,16 +93,18 @@ if os.path.isdir(STATIC_PATH):
 def root():
     return FileResponse(INDEX_PATH)
 
+
 @app.get("/config")
 def get_config():
     return {
         "ollama": {
             "url": config["backend"]["ollama_url"],
             "model": config["backend"]["model"],
-            "mode": "chat"
+            "mode": "chat",
         },
-        "ui": config["ui_web"]
+        "ui": config["ui_web"],
     }
+
 
 @app.get("/api/personalities")
 def list_personalities():
@@ -106,8 +117,9 @@ def list_personalities():
         "personalities": list(personalities.keys()),
         "current_model": current_model,
         "current_personality": current_personality,
-        "model_personality_map": model_map
+        "model_personality_map": model_map,
     }
+
 
 @app.post("/api/set-personality")
 async def set_personality(req: dict):
@@ -133,6 +145,7 @@ async def set_personality(req: dict):
 
     return {"ok": True, "model": model_name, "personality": personality_name}
 
+
 @app.get("/api/models")
 def list_models():
     try:
@@ -143,7 +156,8 @@ def list_models():
     except Exception as e:
         print("ERROR in /api/models:", e)
         return {"models": [], "error": str(e)}
-    
+
+
 @app.get("/api/model-info")
 def model_info():
     info = {
@@ -183,16 +197,15 @@ def model_info():
 
     return info
 
+
 @app.post("/api/set-model")
 async def set_model(req: dict):
     new_model = req.get("model")
     if not new_model:
         return {"ok": False, "error": "No model provided"}
 
-    # update in-memory config
     config["backend"]["model"] = new_model
 
-    # write back to config.json
     try:
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2)
@@ -200,7 +213,8 @@ async def set_model(req: dict):
         print("ERROR writing config.json:", e)
         return {"ok": False, "error": str(e)}
 
-    return {"ok": True, "model": new_model}    
+    return {"ok": True, "model": new_model}
+
 
 # ------------------------------------------------------------
 # SYSTEM / PERSONA PROMPT
@@ -231,7 +245,6 @@ Boundaries:
 - You do not fabricate tool results.
 - You do not invent system details.
 - You do not mention clouds or external services.
-
 """
 
 REASONING_PROMPT = """
@@ -262,46 +275,43 @@ Rules:
 # GENERATE ENDPOINT (non-stream, Markdown-aware)
 # ------------------------------------------------------------
 
-from fastapi import UploadFile, File
+conversations = {}
 
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
-    # Read raw bytes
     raw = await file.read()
 
-    # Try to decode as UTF‑8 text
     try:
         text = raw.decode("utf-8")
         decoded = True
-    except:
+    except Exception:
         decoded = False
         text = None
 
-    # Determine active session
-    # If your chat system uses a session ID, retrieve it here.
-    # If not, fall back to a single global session.
     session_id = "default"
     if session_id not in conversations:
         conversations[session_id] = []
 
-    # Store file content in conversation history
     if decoded:
-        conversations[session_id].append({
-            "role": "user",
-            "content": f"[Uploaded file: {file.filename}]\n{text}"
-        })
+        conversations[session_id].append(
+            {
+                "role": "user",
+                "content": f"[Uploaded file: {file.filename}]\n{text}",
+            }
+        )
     else:
-        conversations[session_id].append({
-            "role": "user",
-            "content": (
-                f"[Uploaded file: {file.filename} — binary data, {len(raw)} bytes]"
-            )
-        })
+        conversations[session_id].append(
+            {
+                "role": "user",
+                "content": (
+                    f"[Uploaded file: {file.filename} — binary data, {len(raw)} bytes]"
+                ),
+            }
+        )
 
-    # Build assistant reply
     if decoded:
-        preview = text[:500]  # prevent flooding the chat
+        preview = text[:500]
         return {
             "reply": (
                 f"I received **{file.filename}** and successfully read it.\n\n"
@@ -329,62 +339,49 @@ async def generate(req: dict):
     model_name = config["backend"]["model"]
     personality_prompt = load_personality_prompt(model_name)
 
-    #- prompt = f"{personality_prompt.strip()}\n\nUser: {text}\nAssistant:"
     session_id = "default"
     if session_id not in conversations:
         conversations[session_id] = []
 
-    # Store the new user message
     conversations[session_id].append({"role": "user", "content": text})
 
-    # Build transcript
     transcript = personality_prompt.strip() + "\n\n"
     for m in conversations[session_id]:
         transcript += f"{m['role'].capitalize()}: {m['content']}\n"
     transcript += "Assistant:"
 
-    prompt = transcript
-
     payload = {
         "model": model_name,
-        "prompt": prompt,
-        "stream": False
+        "prompt": transcript,
+        "stream": False,
     }
 
     try:
         r = requests.post(
             f"{config['backend']['ollama_url']}/api/generate",
-            json=payload
+            json=payload,
         )
 
         print("OLLAMA RAW RESPONSE:", r.text)
 
         resp = r.json()
         return {"reply": resp.get("response", "")}
-
     except Exception as e:
         print("ERROR in /api/generate:", e)
         return {"reply": "Error contacting model."}
 
 # ------------------------------------------------------------
-# CHAT WEBSOCKET (streaming, Markdown-aware)
+# RAG SAFE WRAPPER
 # ------------------------------------------------------------
 
-conversations = {}
-
 def call_rag_server_safe(query: str, session_id: str) -> str | None:
-    """
-    Safe RAG call — returns None if RAG server is offline or errors.
-    """
     try:
-        
         rag_cfg = config.get("rag", {})
         resp = requests.post(
             rag_cfg["url"],
             json={"query": query, "session": session_id},
             timeout=2,
         )
-        
         data = resp.json()
         return data.get("augmented_prompt")
     except Exception as e:
@@ -392,34 +389,42 @@ def call_rag_server_safe(query: str, session_id: str) -> str | None:
         return None
 
 # ------------------------------------------------------------
-# REASONING MODULE (Skeleton)
+# REASONING MODULE
 # ------------------------------------------------------------
-
 def run_reasoning_module(user_message: str) -> dict:
     try:
         payload = {
             "model": config["backend"]["reasoning_model"],
             "prompt": f"{REASONING_PROMPT}\nUser message: {user_message}\nJSON:",
-            "stream": False
+            "stream": False,
         }
 
         r = requests.post(
             f"{config['backend']['ollama_url']}/api/generate",
-            json=payload
+            json=payload,
         )
 
         raw = r.json().get("response", "").strip()
-
         print("RAW REASONING OUTPUT:", raw)
 
-        # Extract JSON substring
+        # Try to extract JSON substring
         start = raw.find("{")
         end = raw.rfind("}")
 
         if start != -1 and end != -1:
-            raw = raw[start:end+1]
+            cleaned = raw[start:end+1]
+            try:
+                return json.loads(cleaned)
+            except:
+                pass
 
-        return json.loads(raw)
+        print("Reasoning JSON malformed, using fallback.")
+        return {
+            "thought": f"Fallback reasoning for: {user_message}",
+            "intent": "unknown",
+            "plan": ["No plan — fallback."],
+            "decision": "none",
+        }
 
     except Exception as e:
         print("Reasoning module error:", e)
@@ -427,19 +432,15 @@ def run_reasoning_module(user_message: str) -> dict:
             "thought": f"Fallback reasoning for: {user_message}",
             "intent": "unknown",
             "plan": ["No plan — fallback."],
-            "decision": "none"
+            "decision": "none",
         }
 
 
 # ------------------------------------------------------------
-# DECISION ROUTER (Non-action version)
+# DECISION ROUTER
 # ------------------------------------------------------------
 
 def route_decision(reasoning: dict) -> str:
-    """
-    Inspect the reasoning output and return a simple string
-    describing what the agent *would* do.
-    """
     intent = reasoning.get("intent", "unknown")
     decision = reasoning.get("decision", "none")
 
@@ -451,6 +452,69 @@ def route_decision(reasoning: dict) -> str:
 
     return f"No action taken (intent: {intent})."
 
+# ------------------------------------------------------------
+# INTENT EXTRACTION FOR WEB
+# ------------------------------------------------------------
+
+async def run_intent_extraction(messages: list) -> dict | None:
+    try:
+        payload = {
+            "model": config["backend"]["model"],
+            "prompt": json.dumps(messages),
+            "stream": False,
+        }
+
+        r = requests.post(
+            f"{config['backend']['ollama_url']}/api/generate",
+            json=payload,
+        )
+
+        raw = r.json().get("response", "").strip()
+        if raw.startswith("{") and raw.endswith("}"):
+            return json.loads(raw)
+
+        return None
+    except Exception as e:
+        print("Intent extraction error:", e)
+        return None
+
+# ------------------------------------------------------------
+# SIMPLE OLLAMA CHAT WRAPPER FOR CONTINUATION
+# ------------------------------------------------------------
+
+class SimpleOllamaChat:
+    def __init__(self, url: str, model: str):
+        self.url = url
+        self.model = model
+
+    async def stream(self, messages: list, on_token):
+        payload = {
+            "model": self.model,
+            "prompt": json.dumps(messages),
+            "stream": True,
+        }
+
+        r = requests.post(
+            f"{self.url}/api/generate",
+            json=payload,
+            stream=True,
+        )
+
+        for line in r.iter_lines():
+            if not line:
+                continue
+            try:
+                chunk = json.loads(line.decode("utf-8"))
+            except Exception:
+                continue
+
+            token = chunk.get("response", "")
+            if token:
+                on_token(token)
+
+# ------------------------------------------------------------
+# CHAT WEBSOCKET
+# ------------------------------------------------------------
 
 @app.websocket("/ws/chat")
 async def chat_ws(ws: WebSocket):
@@ -461,35 +525,117 @@ async def chat_ws(ws: WebSocket):
     model_name = config["backend"]["model"]
     personality_prompt = load_personality_prompt(model_name)
 
+    ollama_client = SimpleOllamaChat(
+        config["backend"]["ollama_url"],
+        model_name,
+    )
+
     try:
-        
-        await ws.send_json({
-            "session": session_id,
-            "reply": "Connected. Ask me anything.",
-            "reasoning": {"thought": "Session initialized.", "intent": "none", "plan": [], "decision": "none"},
-            "stream": False
-        })
+        await ws.send_json(
+            {
+                "session": session_id,
+                "reply": "Connected. Ask me anything.",
+                "reasoning": {
+                    "thought": "Session initialized.",
+                    "intent": "none",
+                    "plan": [],
+                    "decision": "none",
+                },
+                "stream": False,
+            }
+        )
 
         while True:
-            # Receive JSON message from the client
             data = await ws.receive_json()
             text = data.get("text", "")
+
             reasoning = run_reasoning_module(text)
             decision_result = route_decision(reasoning)
 
-            # Store user message
             conversations[session_id].append({"role": "user", "content": text})
 
             # ------------------------------------------------------------
-            # TRY RAG AUGMENTATION
+            # INTENT EXTRACTION + TOOL PIPELINE
+            # ------------------------------------------------------------
+            intent_messages = [
+                {"role": "system", "content": INTENT_SYSTEM_PROMPT},
+                {"role": "user", "content": text},
+            ]
+
+            intent_json = await run_intent_extraction(intent_messages)
+
+            if intent_json and "intent" in intent_json:
+                tool_name, tool_args = route_intent(intent_json, text)
+
+                if tool_name != "chat_tool":
+                    await ws.send_json(
+                        {
+                            "session": session_id,
+                            "tool_call": {
+                                "name": tool_name,
+                                "args": tool_args,
+                            },
+                            "stream": False,
+                        }
+                    )
+
+                    tool_results = await execute_tool(
+                        tool_name,
+                        tool_args,
+                        config=config,
+                        mcp_client=None,
+                    )
+
+                    await ws.send_json(
+                        {
+                            "session": session_id,
+                            "tool_results": tool_results,
+                            "stream": False,
+                        }
+                    )
+
+                    async def ws_append_fn(token: str):
+                        await ws.send_json(
+                            {
+                                "session": session_id,
+                                "reply": token,
+                                "stream": True,
+                            }
+                        )
+
+                    continuation = await continue_llm_with_tool_results(
+                        llm=ollama_client,
+                        tool_name=tool_name,
+                        results=tool_results,
+                        append_fn=lambda t: asyncio.create_task(ws_append_fn(t)),
+                        stream_to_terminal=False,
+                        tts=None,
+                    )
+
+                    await ws.send_json(
+                        {
+                            "session": session_id,
+                            "reply": continuation,
+                            "reasoning": reasoning,
+                            "decision_result": decision_result,
+                            "stream": False,
+                        }
+                    )
+
+                    conversations[session_id].append(
+                        {"role": "assistant", "content": continuation}
+                    )
+
+                    continue
+
+            # ------------------------------------------------------------
+            # RAG + NORMAL LLM PATH
             # ------------------------------------------------------------
             augmented_prompt = call_rag_server_safe(text, session_id)
 
             if augmented_prompt:
-                # Use RAG prompt
                 prompt_to_llm = augmented_prompt
             else:
-                # Fall back to your existing transcript behavior
                 transcript = personality_prompt.strip() + "\n\n"
                 for m in conversations[session_id]:
                     transcript += f"{m['role'].capitalize()}: {m['content']}\n"
@@ -499,14 +645,14 @@ async def chat_ws(ws: WebSocket):
             payload = {
                 "model": model_name,
                 "prompt": prompt_to_llm,
-                "stream": True
+                "stream": True,
             }
 
             try:
                 r = requests.post(
                     f"{config['backend']['ollama_url']}/api/generate",
                     json=payload,
-                    stream=True
+                    stream=True,
                 )
 
                 full_reply = ""
@@ -524,32 +670,37 @@ async def chat_ws(ws: WebSocket):
                         continue
 
                     full_reply += token
-                    await ws.send_json({
+                    await ws.send_json(
+                        {
+                            "session": session_id,
+                            "reply": token,
+                            "stream": True,
+                        }
+                    )
+
+                conversations[session_id].append(
+                    {"role": "assistant", "content": full_reply}
+                )
+
+                await ws.send_json(
+                    {
                         "session": session_id,
-                        "reply": token,
-                        "stream": True
-                    })
-
-                conversations[session_id].append({
-                    "role": "assistant",
-                    "content": full_reply
-                })
-
-                await ws.send_json({
-                    "session": session_id,
-                    "reply": full_reply,
-                    "reasoning": reasoning,
-                    "decision_result": decision_result,
-                    "stream": False
-                })
+                        "reply": full_reply,
+                        "reasoning": reasoning,
+                        "decision_result": decision_result,
+                        "stream": False,
+                    }
+                )
 
             except Exception as e:
                 print("ERROR in /ws/chat:", e)
-                await ws.send_json({
-                    "session": session_id,
-                    "reply": "Error contacting model.",
-                    "stream": False
-                })
+                await ws.send_json(
+                    {
+                        "session": session_id,
+                        "reply": "Error contacting model.",
+                        "stream": False,
+                    }
+                )
 
     except WebSocketDisconnect:
         print("WebSocket disconnected")

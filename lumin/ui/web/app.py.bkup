@@ -88,18 +88,18 @@ def root():
 def get_config():
     return {
         "ollama": {
-            "url": config["ollama"]["url"],
-            "model": config["ollama"]["model"],
-            "mode": config["ollama"].get("mode", "chat")
+            "url": config["backend"]["ollama_url"],
+            "model": config["backend"]["model"],
+            "mode": "chat"
         },
-        "ui": config["ui"]
+        "ui": config["ui_web"]
     }
 
 @app.get("/api/personalities")
 def list_personalities():
     personalities = config.get("personalities", {})
     model_map = config.get("model_personality_map", {})
-    current_model = config["ollama"]["model"]
+    current_model = config["backend"]["model"]
     current_personality = model_map.get(current_model, "default")
 
     return {
@@ -111,7 +111,7 @@ def list_personalities():
 
 @app.post("/api/set-personality")
 async def set_personality(req: dict):
-    model_name = req.get("model") or config["ollama"]["model"]
+    model_name = req.get("model") or config["backend"]["model"]
     personality_name = req.get("personality")
 
     if not personality_name:
@@ -136,7 +136,7 @@ async def set_personality(req: dict):
 @app.get("/api/models")
 def list_models():
     try:
-        r = requests.get(f"{config['ollama']['url']}/api/tags")
+        r = requests.get(f"{config['backend']['ollama_url']}/api/tags")
         data = r.json()
         models = [m.get("name") for m in data.get("models", [])]
         return {"models": models}
@@ -147,13 +147,13 @@ def list_models():
 @app.get("/api/model-info")
 def model_info():
     info = {
-        "model": config["ollama"]["model"],
-        "backend": config["ollama"]["url"],
+        "model": config["backend"]["model"],
+        "backend": config["backend"]["ollama_url"],
     }
 
     # Ollama ps
     try:
-        r = requests.get(f"{config['ollama']['url']}/api/ps")
+        r = requests.get(f"{config['backend']['ollama_url']}/api/ps")
         ps = r.json()
         info["running"] = ps.get("models", [])
     except Exception as e:
@@ -190,7 +190,7 @@ async def set_model(req: dict):
         return {"ok": False, "error": "No model provided"}
 
     # update in-memory config
-    config["ollama"]["model"] = new_model
+    config["backend"]["model"] = new_model
 
     # write back to config.json
     try:
@@ -232,8 +232,30 @@ Boundaries:
 - You do not invent system details.
 - You do not mention clouds or external services.
 
+"""
 
+REASONING_PROMPT = """
+You are a reasoning engine. Respond ONLY with valid JSON. 
+No prose. No explanations. No markdown. No commentary. 
+Your response MUST begin with '{' and end with '}'.
 
+JSON schema:
+{
+  "thought": "string",
+  "intent": "string",
+  "plan": ["string"],
+  "decision": "none | respond | call_tool"
+}
+
+Rules:
+- Do NOT add any text before or after the JSON.
+- Do NOT include backticks.
+- Do NOT include comments.
+- Do NOT explain the JSON.
+- Do NOT apologize.
+- Do NOT add extra fields.
+- Do NOT add trailing commas.
+- Produce concise values.
 """
 
 # ------------------------------------------------------------
@@ -304,10 +326,24 @@ async def generate(req: dict):
     if not text:
         return {"reply": ""}
 
-    model_name = config["ollama"]["model"]
+    model_name = config["backend"]["model"]
     personality_prompt = load_personality_prompt(model_name)
 
-    prompt = f"{personality_prompt.strip()}\n\nUser: {text}\nAssistant:"
+    #- prompt = f"{personality_prompt.strip()}\n\nUser: {text}\nAssistant:"
+    session_id = "default"
+    if session_id not in conversations:
+        conversations[session_id] = []
+
+    # Store the new user message
+    conversations[session_id].append({"role": "user", "content": text})
+
+    # Build transcript
+    transcript = personality_prompt.strip() + "\n\n"
+    for m in conversations[session_id]:
+        transcript += f"{m['role'].capitalize()}: {m['content']}\n"
+    transcript += "Assistant:"
+
+    prompt = transcript
 
     payload = {
         "model": model_name,
@@ -317,7 +353,7 @@ async def generate(req: dict):
 
     try:
         r = requests.post(
-            f"{config['ollama']['url']}/api/generate",
+            f"{config['backend']['ollama_url']}/api/generate",
             json=payload
         )
 
@@ -341,16 +377,79 @@ def call_rag_server_safe(query: str, session_id: str) -> str | None:
     Safe RAG call — returns None if RAG server is offline or errors.
     """
     try:
+        
+        rag_cfg = config.get("rag", {})
         resp = requests.post(
-            "http://192.168.1.200:8001/rag",
+            rag_cfg["url"],
             json={"query": query, "session": session_id},
             timeout=2,
         )
+        
         data = resp.json()
         return data.get("augmented_prompt")
     except Exception as e:
         print("RAG unavailable:", e)
         return None
+
+# ------------------------------------------------------------
+# REASONING MODULE (Skeleton)
+# ------------------------------------------------------------
+
+def run_reasoning_module(user_message: str) -> dict:
+    try:
+        payload = {
+            "model": config["backend"]["reasoning_model"],
+            "prompt": f"{REASONING_PROMPT}\nUser message: {user_message}\nJSON:",
+            "stream": False
+        }
+
+        r = requests.post(
+            f"{config['backend']['ollama_url']}/api/generate",
+            json=payload
+        )
+
+        raw = r.json().get("response", "").strip()
+
+        print("RAW REASONING OUTPUT:", raw)
+
+        # Extract JSON substring
+        start = raw.find("{")
+        end = raw.rfind("}")
+
+        if start != -1 and end != -1:
+            raw = raw[start:end+1]
+
+        return json.loads(raw)
+
+    except Exception as e:
+        print("Reasoning module error:", e)
+        return {
+            "thought": f"Fallback reasoning for: {user_message}",
+            "intent": "unknown",
+            "plan": ["No plan — fallback."],
+            "decision": "none"
+        }
+
+
+# ------------------------------------------------------------
+# DECISION ROUTER (Non-action version)
+# ------------------------------------------------------------
+
+def route_decision(reasoning: dict) -> str:
+    """
+    Inspect the reasoning output and return a simple string
+    describing what the agent *would* do.
+    """
+    intent = reasoning.get("intent", "unknown")
+    decision = reasoning.get("decision", "none")
+
+    if decision == "respond":
+        return f"Agent would respond normally (intent: {intent})."
+
+    if decision == "call_tool":
+        return f"Agent would call a tool (intent: {intent})."
+
+    return f"No action taken (intent: {intent})."
 
 
 @app.websocket("/ws/chat")
@@ -359,13 +458,15 @@ async def chat_ws(ws: WebSocket):
     session_id = str(uuid.uuid4())
     conversations[session_id] = []
 
-    model_name = config["ollama"]["model"]
+    model_name = config["backend"]["model"]
     personality_prompt = load_personality_prompt(model_name)
 
     try:
+        
         await ws.send_json({
             "session": session_id,
             "reply": "Connected. Ask me anything.",
+            "reasoning": {"thought": "Session initialized.", "intent": "none", "plan": [], "decision": "none"},
             "stream": False
         })
 
@@ -373,6 +474,8 @@ async def chat_ws(ws: WebSocket):
             # Receive JSON message from the client
             data = await ws.receive_json()
             text = data.get("text", "")
+            reasoning = run_reasoning_module(text)
+            decision_result = route_decision(reasoning)
 
             # Store user message
             conversations[session_id].append({"role": "user", "content": text})
@@ -401,7 +504,7 @@ async def chat_ws(ws: WebSocket):
 
             try:
                 r = requests.post(
-                    f"{config['ollama']['url']}/api/generate",
+                    f"{config['backend']['ollama_url']}/api/generate",
                     json=payload,
                     stream=True
                 )
@@ -435,6 +538,8 @@ async def chat_ws(ws: WebSocket):
                 await ws.send_json({
                     "session": session_id,
                     "reply": full_reply,
+                    "reasoning": reasoning,
+                    "decision_result": decision_result,
                     "stream": False
                 })
 
