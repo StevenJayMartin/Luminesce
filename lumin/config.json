@@ -1,16 +1,12 @@
 {
-  "backend": {
-    "ollama_url": "http://192.168.1.205:11434",
+  "ollama": {
+    "url": "http://192.168.1.205:11434",
     "model": "llama3.2",
-    "reasoning_model": "llama3.2",
-    "rag_enabled": true
+    "mode": "generate"
   },
-
-  "rag": {
-    "enabled": true,
-    "url": "http://192.168.1.205:8001/rag"
+    "reasoning": {
+    "model": "llama3.2"
   },
-
   "personalities": {
     "default": "prompts/default.txt",
     "teacher": "prompts/teacher.txt",
@@ -18,59 +14,34 @@
     "developer": "prompts/developer.txt",
     "playful": "prompts/playful.txt"
   },
-
   "model_personality_map": {
-    "llama3.2": "developer",
-    "phi3:medium": "teacher",
-    "qwen2.5:7b": "concise",
-    "mistral:7b": "default"
+     "llama3.2": "developer",
+     "phi3:medium": "teacher",
+     "qwen2.5:7b": "concise",
+     "mistral:7b": "default"
   },
-
-  "ui_web": {
-    "enabled": true,
-    "ws_enabled": true,
-    "reasoning_enabled": true,
-    "streaming_enabled": true,
-    "theme": "dark",
-    "show_gpu": true,
-    "show_status": true,
-    "animations": true,
-    "width": "auto"
-  },
-
-  "ui_tui": {
-    "enabled": false,
-    "theme": "ascii",
-    "colors": "solarized",
-    "reasoning_enabled": true,
-    "stream_to_terminal": true
-  },
-
   "voice": {
-    "enabled": false,
     "mic_device": 1,
-    "vosk_model_path": "C:/HOME_Scripts/Luminesce/lumin/models/vosk/vosk-model-small-en-us-0.15",
+    "vosk_model_path": "C:\\HOME_Scripts\\Luminesce\\lumin\\models\\vosk\\vosk-model-small-en-us-0.15",
     "silence_threshold": 2000,
     "silence_duration": 1.5,
     "listen_mode": "push_to_talk",
+    "tts_enabled": true,
     "wake_words": ["hey lumin", "lumin"],
     "stop_words": ["stop", "cancel"],
     "clear_words": ["clear that", "reset"],
     "listen_again_words": ["listen again", "start over"]
   },
-
+    "rag": {
+    "enabled": true,
+    "url": "http://192.168.1.205:8001/rag"
+  },
   "tts": {
     "enabled": false,
     "engine": "piper",
     "piper_path": "C:/HOME_Scripts/Luminesce/piper/piper.exe",
     "model_path": "models/en_US-ryan-low.onnx",
     "voice": "en_US-ryan-low"
-  },
-
-  "tools": {
-    "enabled": true,
-    "list": ["duckduckgo_search"],
-    "search_engine": "duckduckgo"
   },
 
   "mcp": {
@@ -80,6 +51,21 @@
       "lumin.mcp.mcp_server"
     ],
     "cwd": "C:/HOME_Scripts/Luminesce"
+  },
+
+  "tools": {
+    "enabled": true,
+    "list": ["duckduckgo_search"],
+    "search_engine": "duckduckgo"
+  },
+
+  "ui": {
+    "stream_to_terminal": true,
+    "theme": "dark",
+    "animations": true,
+
+    "mode": "auto",      
+    "width": "auto"
   },
 
   "api": {
