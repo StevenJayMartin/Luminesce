@@ -1,9 +1,17 @@
 <!-- LUMINESCE BANNER LOGO -->
 ![Luminesce banner](banner.svg)
 
+### Lumin Assistant — Web UI
+
+The Lumin Web UI provides a lightweight chat interface with model selection,
+personality switching, file uploads, and agent reasoning display.
 
 # 🌌 Luminesce  
 ### *Enlightenment without heat — a fully local, multi‑modal AI assistant platform*
+
+**Screenshot: ui web**
+
+![Lumin UI](./assets/lumin-web-ui.png)
 
 Luminesce is a **local‑first AI assistant platform** that blends voice, text, tools, RAG, MCP, and expressive UI into a single cohesive system.  
 It’s designed for developers who want a *real* assistant architecture — not a toy demo, not a single‑file script, but a modular, extensible, multi‑modal AI stack.
