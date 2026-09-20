@@ -229,7 +229,8 @@ class LuminApp(App):
         self.chat_history.append({"role": "user", "content": user_text})
 
         # RAW JSON-RPC MCP COMMAND
-        if user_text.startswith("mcp_rpc "):
+        if user_text.strip().startswith("mcp_rpc"):
+
             if not self.mcp_client:
                 self.append_chat("⚠ MCP not configured.\n")
                 return
@@ -246,7 +247,8 @@ class LuminApp(App):
                 self.append_chat(f"Error parsing JSON-RPC: {e}\n")
             return
 
-        if user_text.startswith("ingest "):
+        if user_text.strip().startswith("ingest"):
+
             url = user_text.split(" ", 1)[1].strip()
             results = await self._execute_tool("rag_ingest", {"url": url})
             self.append_chat(

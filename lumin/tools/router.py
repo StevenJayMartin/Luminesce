@@ -14,27 +14,18 @@ LEGACY_TOOLS = {
 }
 
 def route_intent(intent_json, user_message):
-    """
-    Hybrid-mode intent router.
-    Supports both legacy tools and MCP tools.
-    """
-
     intent = intent_json.get("intent")
-    args = intent_json.get("args", {})
 
-    # ------------------------------------------------------------
-    # MCP tool routing
-    # ------------------------------------------------------------
+    # Accept both formats:
+    # { "intent": "weather", "args": {"location": "..."} }
+    # { "intent": "weather", "location": "..." }
+
+    args = intent_json.get("args") or {k: v for k, v in intent_json.items() if k != "intent"}
+
     if intent in MCP_TOOLS:
         return intent, args
 
-    # ------------------------------------------------------------
-    # Legacy tool routing
-    # ------------------------------------------------------------
     if intent in LEGACY_TOOLS:
         return LEGACY_TOOLS[intent], args
 
-    # ------------------------------------------------------------
-    # Fallback: no tool
-    # ------------------------------------------------------------
     return "chat_tool", {"message": user_message}
