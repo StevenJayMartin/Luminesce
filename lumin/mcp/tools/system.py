@@ -2,6 +2,10 @@ import platform
 import psutil
 import datetime
 
+# ------------------------------------------------------------
+# System operations
+# ------------------------------------------------------------
+
 def tool_sys_info(params):
     return {
         "os": platform.system(),
@@ -22,6 +26,28 @@ def tool_disk_usage(params):
         "free": usage.free,
         "percent": usage.percent
     }
+
+# ------------------------------------------------------------
+# MCP entrypoint
+# ------------------------------------------------------------
+
+def run(params):
+    command = params.get("command")
+
+    if command == "info":
+        return tool_sys_info(params)
+
+    if command == "cpu":
+        return tool_cpu_load(params)
+
+    if command == "disk":
+        return tool_disk_usage(params)
+
+    return {"error": f"Unknown system command '{command}'"}
+
+# ------------------------------------------------------------
+# Metadata
+# ------------------------------------------------------------
 
 TOOL_META = {
     "tool_sys_info": {
@@ -46,4 +72,3 @@ TOOL_META = {
         "examples": []
     }
 }
-
