@@ -52,12 +52,19 @@
     </div>
 
     <!-- JS Modules -->
-    <script src="/static/js/websocket.js"></script>
-    <script src="/static/js/streaming.js"></script>
-    <script src="/static/js/tools.js"></script>
-    <script src="/static/js/mcp.js"></script>
-    <script src="/static/js/rag.js"></script>
-    <script src="/static/js/ui.js"></script>
+    <script type="module" src="/static/js/websocket.js"></script>
+    <script type="module" src="/static/js/streaming.js"></script>
+    <script type="module" src="/static/js/tools.js"></script>
+    <script type="module" src="/static/js/mcp.js"></script>
+    <script type="module" src="/static/js/rag.js"></script>
+    <script type="module" src="/static/js/ui.js"></script>
+
+    <!-- Bootstrap -->
+    <script type="module">
+        import { loadConfig, initInputHandlers } from "/static/js/ui.js";
+        loadConfig();
+        initInputHandlers();
+    </script>
 
 </body>
 </html>
