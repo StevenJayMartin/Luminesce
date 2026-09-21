@@ -54,16 +54,11 @@ Luminesce is designed to be a self‑hosted personal assistant that runs entirel
 6. Run:
 
 ```
-python -m lumin.ui.tui
+cd Luminesce
+mkdir logs
+mkdir .\lumin\models\vosk    #- download stt vosk-model-small-en-us-0.15
+python -m lumin.main --model="mistral:7b" --llm-mode=chat --config="lumin/config.json" 
 ```
-
-or
-
-```
-python -m lumin.ui.web
-```
-
----
 
 ## Documentation
 
@@ -85,5 +80,3 @@ See the `docs/` directory for:
 ## License
 
 MIT
-
-
