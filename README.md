@@ -9,6 +9,10 @@ personality switching, file uploads, and agent reasoning display.
 # 🌌 Luminesce  
 ### *Enlightenment without heat — a fully local, multi‑modal AI assistant platform*
 
+**Screenshot: ui mcp tui**
+
+![Lumin UI](./assets/lumin-tui-ui.png)
+
 **Screenshot: ui web**
 
 ![Lumin UI](./assets/lumin-web-ui.png)

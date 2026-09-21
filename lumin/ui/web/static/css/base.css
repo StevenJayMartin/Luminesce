@@ -1,0 +1,120 @@
+body {
+    margin: 0;
+    padding: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Model Bar */
+#model-bar {
+    padding: 10px;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+}
+
+#model-bar-left,
+#model-bar-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Chat Container */
+#chat-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+/* Input Bar */
+#input-bar {
+    display: flex;
+    padding: 10px;
+    border-top: 1px solid var(--border-subtle);
+}
+
+#input {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid transparent;
+    outline: none;
+    font-size: 16px;
+    border-radius: 8px;
+    transition: border 0.2s, background 0.2s;
+}
+
+#send {
+    padding: 10px 20px;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    margin-left: 10px;
+    border-radius: 8px;
+    font-weight: 600;
+    transition: background 0.2s, transform 0.1s;
+}
+
+/* Messages */
+.msg {
+    max-width: 80%;
+    padding: 12px 14px;
+    margin: 10px 0;
+    border-radius: 14px;
+    line-height: 1.5;
+    animation: fadeIn 0.25s ease-out;
+    word-wrap: break-word;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.msg-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    opacity: 0.85;
+}
+
+.msg-body {
+    font-size: 14px;
+}
+
+.user {
+    margin-left: auto;
+}
+
+.assistant {
+    margin-right: auto;
+}
+
+.assistant pre {
+    padding: 10px;
+    border-radius: 10px;
+    overflow-x: auto;
+    position: relative;
+}
+
+.copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}

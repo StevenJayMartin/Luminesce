@@ -1,0 +1,60 @@
+:root {
+    --bg: #050816;
+    --fg: #e5e7eb;
+    --bubble-user: #1e88e5;
+    --bubble-assistant: #111827;
+    --input-bg: #0f172a;
+    --input-fg: #f9fafb;
+    --accent: #22c55e;
+    --border-subtle: #1f2937;
+}
+
+body {
+    background: radial-gradient(circle at top left, #0f172a 0%, #020617 60%, #000 100%);
+    color: var(--fg);
+}
+
+#model-bar {
+    background: #0b1120;
+}
+
+#model-picker,
+#personality-picker,
+#export-chat,
+#upload-btn {
+    background: #1f2937;
+    color: var(--fg);
+    border: 1px solid var(--border-subtle);
+}
+
+#input {
+    background: var(--input-bg);
+    color: var(--input-fg);
+}
+
+#input:focus {
+    background: #020617;
+    border-color: var(--accent);
+}
+
+#send {
+    background: var(--accent);
+    color: white;
+}
+
+#send:hover {
+    background: #16a34a;
+}
+
+.msg {
+    box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+}
+
+.assistant pre {
+    background: #0b1120;
+}
+
+.copy-btn {
+    background: #1f2937;
+    color: #e5e7eb;
+}
