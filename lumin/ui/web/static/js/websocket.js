@@ -63,6 +63,12 @@ export function connectWS() {
 
         if (!isStream) {
             hideTyping();
+
+            if (chunk) {
+                // Final assistant message
+                addMessage("assistant", chunk);
+            }
+
             currentAssistantDiv = null;
             accumulated = "";
             return;

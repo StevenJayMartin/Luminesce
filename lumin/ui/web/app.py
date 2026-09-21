@@ -102,8 +102,13 @@ def list_personalities():
     current_model = config["ollama"]["model"]
     current_personality = model_map.get(current_model, "default")
 
+    personality_list = [
+        {"id": name, "name": name.capitalize()}
+        for name in personalities.keys()
+    ]
+
     return {
-        "personalities": list(personalities.keys()),
+        "personalities": personality_list,
         "current_model": current_model,
         "current_personality": current_personality,
         "model_personality_map": model_map
