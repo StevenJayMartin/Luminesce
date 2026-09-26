@@ -78,7 +78,10 @@ def load_config(path: str) -> dict:
     # -----------------------------
     # UI DEFAULTS
     # -----------------------------
-    ui_cfg = config["ui"]
+    #- SJM 092626 ui_cfg = config["ui"]
+
+    ui_cfg = config["ui"]["tui"]
+
     ui_cfg.setdefault("stream_to_terminal", True)
     ui_cfg.setdefault("theme", "dark")
     ui_cfg.setdefault("animations", True)

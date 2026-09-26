@@ -597,3 +597,12 @@ class LuminApp(App):
 
         if not text:
             return
+        
+        # -----------------------------
+        # Dispatch STT → Chat + LLM
+        # -----------------------------
+        self.append_chat(f"You: {text}\n")
+        self.chat_history.append({"role": "user", "content": text})
+
+        # Run the LLM pipeline
+        asyncio.run(self._stream_llm(text))

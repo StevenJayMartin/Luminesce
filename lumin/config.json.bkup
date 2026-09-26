@@ -4,11 +4,9 @@
     "model": "llama3.2",
     "mode": "generate"
   },
-
-  "reasoning": {
+    "reasoning": {
     "model": "llama3.2"
   },
-
   "personalities": {
     "default": "prompts/default.txt",
     "teacher": "prompts/teacher.txt",
@@ -16,34 +14,12 @@
     "developer": "prompts/developer.txt",
     "playful": "prompts/playful.txt"
   },
-
   "model_personality_map": {
-    "llama3.2": "developer",
-    "phi3:medium": "teacher",
-    "qwen2.5:7b": "concise",
-    "mistral:7b": "default"
+     "llama3.2": "developer",
+     "phi3:medium": "teacher",
+     "qwen2.5:7b": "concise",
+     "mistral:7b": "default"
   },
-
-  "rag": {
-    "enabled": true,
-    "url": "http://192.168.1.205:8001/rag"
-  },
-
-  "tools": {
-    "enabled": true,
-    "list": ["duckduckgo_search"],
-    "search_engine": "duckduckgo"
-  },
-
-  "mcp": {
-    "server_cmd": [
-      "C:/HOME_Scripts/Luminesce/venv/Scripts/python.exe",
-      "-m",
-      "lumin.mcp.mcp_server"
-    ],
-    "cwd": "C:/HOME_Scripts/Luminesce"
-  },
-
   "voice": {
     "mic_device": 1,
     "vosk_model_path": "C:\\HOME_Scripts\\Luminesce\\lumin\\models\\vosk\\vosk-model-small-en-us-0.15",
@@ -56,7 +32,10 @@
     "clear_words": ["clear that", "reset"],
     "listen_again_words": ["listen again", "start over"]
   },
-
+    "rag": {
+    "enabled": true,
+    "url": "http://192.168.1.205:8001/rag"
+  },
   "tts": {
     "enabled": false,
     "engine": "piper",
@@ -65,24 +44,32 @@
     "voice": "en_US-ryan-low"
   },
 
+  "mcp": {
+    "server_cmd": [
+      "C:/HOME_Scripts/Luminesce/venv/Scripts/python.exe",
+      "-m",
+      "lumin.mcp.mcp_server"
+    ],
+    "cwd": "C:/HOME_Scripts/Luminesce"
+  },
+
+  "tools": {
+    "enabled": true,
+    "list": ["duckduckgo_search"],
+    "search_engine": "duckduckgo"
+  },
+
   "ui": {
-    "tui": {
-      "stream_to_terminal": true,
-      "theme": "dark",
-      "animations": true,
-      "mode": "auto",
-      "width": "auto"
-    },
-    "web": {
-      "theme": "dark",
-      "animations": true,
-      "default_model": "llama3.2",
-      "show_reasoning_panel": true
-    }
+    "stream_to_terminal": true,
+    "theme": "dark",
+    "animations": true,
+
+    "mode": "auto",      
+    "width": "auto"
   },
 
   "api": {
-    "enabled": true,
+    "enabled": false,
     "host": "0.0.0.0",
     "port": 8000
   }
