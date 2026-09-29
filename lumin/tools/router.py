@@ -16,12 +16,25 @@ LEGACY_TOOLS = {
 def route_intent(intent_json, user_message):
     intent = intent_json.get("intent")
 
-    # Accept both formats:
-    # { "intent": "weather", "args": {"location": "..."} }
-    # { "intent": "weather", "location": "..." }
-
+    # Extract args if present
     args = intent_json.get("args") or {k: v for k, v in intent_json.items() if k != "intent"}
 
+    # Custom intent: get_weather
+    
+    
+    if intent == "get_weather":
+        cleaned = (
+            user_message.lower()
+            .replace("what's the weather in", "")
+            .replace("whats the weather in", "")
+            .replace("what is the weather in", "")
+            .replace("weather in", "")
+            .replace("right now", "")
+            .replace("please", "")
+            .strip()
+        )
+        return "weather_api", {"location": cleaned}
+    
     if intent in MCP_TOOLS:
         return intent, args
 

@@ -1,4 +1,5 @@
 import requests
+import asyncio
 
 def weather_api(location: str, config=None) -> dict:
     """

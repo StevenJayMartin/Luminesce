@@ -8,6 +8,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from lumin.tools.router import route_intent
+from lumin.tools.registry import get as get_tool
 
 # ------------------------------------------------------------
 # PATHS
@@ -92,7 +94,8 @@ def get_config():
             "model": config["ollama"]["model"],
             "mode": config["ollama"].get("mode", "chat")
         },
-        "ui": config["ui"]
+        #- sjm 092626"ui": config["ui"]
+        "ui": config.get("ui", {}).get("web", {})
     }
 
 @app.get("/api/personalities")
@@ -252,6 +255,12 @@ JSON schema:
   "decision": "none | respond | call_tool"
 }
 
+Decision rules:
+- If the user asks for weather, set "decision": "call_tool" and "intent": "get_weather".
+- If the user asks for information requiring external lookup (weather, facts, search queries), set "decision": "call_tool".
+- If the user asks for anything requiring a tool, ALWAYS choose "call_tool".
+- Only choose "respond" for purely conversational or opinion questions.
+
 Rules:
 - Do NOT add any text before or after the JSON.
 - Do NOT include backticks.
@@ -397,8 +406,88 @@ def call_rag_server_safe(query: str, session_id: str) -> str | None:
         return None
 
 # ------------------------------------------------------------
-# REASONING MODULE (Skeleton)
+# REASONING MODULE
 # ------------------------------------------------------------
+
+import re
+
+def tolerant_json_extract(raw: str) -> dict:
+    """
+    Extracts and repairs malformed JSON from LLM output.
+    Handles:
+    - missing closing brace
+    - missing commas between fields
+    - trailing commas
+    - extra text before/after JSON
+    - markdown fences
+    - comments
+    """
+
+    # Strip markdown fences
+    raw = raw.replace("```json", "").replace("```", "").strip()
+
+    # Extract the first {...} block
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start == -1:
+        return None
+    if end == -1:
+        # Missing closing brace → add one
+        raw = raw[start:] + "}"
+    else:
+        raw = raw[start:end+1]
+
+    # Remove comments
+    raw = re.sub(r"//.*", "", raw)
+    raw = re.sub(r"#.*", "", raw)
+
+    # Fix missing commas between fields:
+    # "value"\n  "next_key":
+    raw = re.sub(r'"\s*\n\s*"(?=[a-zA-Z0-9_]+")', '",\n"', raw)
+
+    # Fix missing commas after arrays
+    raw = re.sub(r']\s*\n\s*"(?=[a-zA-Z0-9_]+")', '],\n"', raw)
+
+    # Fix trailing commas before closing brace
+    raw = re.sub(r',\s*}', '}', raw)
+
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
+
+def sanitize_reasoning(parsed: dict) -> dict:
+    # Ensure required keys exist
+    thought = parsed.get("thought", "").strip()
+    intent = parsed.get("intent", "").strip()
+    plan = parsed.get("plan", [])
+    decision = parsed.get("decision", "none")
+
+    # Fix empty intent
+    if intent == "":
+        intent = "none"
+
+    # Fix malformed plan
+    if not isinstance(plan, list):
+        plan = []
+
+    # Fix invalid decision
+    if decision not in ["none", "respond", "call_tool"]:
+        decision = "none"
+
+    # --- NEW: memory-related messages should be conversational ---
+    memory_words = ["remember", "recall", "memory"]
+    if any(w in thought.lower() for w in memory_words):
+        decision = "respond"
+        intent = "conversation"
+
+    return {
+        "thought": thought,
+        "intent": intent,
+        "plan": plan,
+        "decision": decision
+    }
+
 
 def run_reasoning_module(user_message: str) -> dict:
     try:
@@ -418,14 +507,29 @@ def run_reasoning_module(user_message: str) -> dict:
         print("RAW REASONING OUTPUT:", raw)
 
         # Extract JSON substring
-        start = raw.find("{")
-        end = raw.rfind("}")
+        parsed = tolerant_json_extract(raw)
+        if parsed is not None:
+            parsed = sanitize_reasoning(parsed)
 
-        if start != -1 and end != -1:
-            raw = raw[start:end+1]
+            # --- NEW: conversational override based on user message ---
+            conversation_keywords = [
+                "how are", "hello", "hi", "hey", "good morning", "good evening",
+                "what's up", "how is your day", "how are we"
+            ]
 
-        return json.loads(raw)
+            if any(k in user_message.lower() for k in conversation_keywords):
+                parsed["decision"] = "respond"
+                parsed["intent"] = "conversation"
 
+            # --- NEW: global fallback override ---
+            # If the reasoning module can't classify the message,
+            # treat it as normal conversation instead of "no context".
+            if parsed["decision"] == "none":
+                parsed["decision"] = "respond"
+                parsed["intent"] = "conversation"
+
+            return parsed
+           
     except Exception as e:
         print("Reasoning module error:", e)
         return {
@@ -435,27 +539,66 @@ def run_reasoning_module(user_message: str) -> dict:
             "decision": "none"
         }
 
-
 # ------------------------------------------------------------
 # DECISION ROUTER (Non-action version)
 # ------------------------------------------------------------
 
-def route_decision(reasoning: dict) -> str:
-    """
-    Inspect the reasoning output and return a simple string
-    describing what the agent *would* do.
-    """
-    intent = reasoning.get("intent", "unknown")
+def route_decision(reasoning: dict, user_message: str):
     decision = reasoning.get("decision", "none")
+    intent = reasoning.get("intent", "conversation")
 
+    # If the agent should respond normally, do nothing.
     if decision == "respond":
-        return f"Agent would respond normally (intent: {intent})."
+        return "respond"
 
+    # If the agent should call a tool, signal that.
     if decision == "call_tool":
-        return f"Agent would call a tool (intent: {intent})."
+        return "call_tool"
 
-    return f"No action taken (intent: {intent})."
+    # Fallback: treat as normal conversation
+    return "respond"
 
+async def execute_tool(name, args):
+    import inspect
+    tool = get_tool(name)
+    if not tool:
+        return {"error": f"Unknown tool '{name}'"}
+
+    try:
+        
+        if inspect.iscoroutinefunction(tool.__call__):
+            return await tool(**args)
+        return tool(config=config, **args)
+        
+    except Exception as e:
+        return {"error": str(e)}
+
+async def continue_llm_with_tool_results(tool_name, results):
+       
+    import uuid
+
+    prefix = f"### TOOL_EXECUTION_{uuid.uuid4()} ###\n"
+    prompt = (
+        prefix +
+        f"Tool '{tool_name}' returned:\n"
+        f"{json.dumps(results, indent=2)}\n\n"
+        "Answer the user's question using this information."
+    )
+    
+    payload = {
+        "model": config["ollama"]["model"],
+        "prompt": prompt,
+        "stream": False
+    }
+
+    try:
+        r = requests.post(
+            f"{config['ollama']['url']}/api/generate",
+            json=payload
+        )
+        return r.json().get("response", "")
+    except Exception:
+        return "Error contacting model."
 
 @app.websocket("/ws/chat")
 async def chat_ws(ws: WebSocket):
@@ -476,11 +619,30 @@ async def chat_ws(ws: WebSocket):
         })
 
         while True:
-            # Receive JSON message from the client
             data = await ws.receive_json()
             text = data.get("text", "")
             reasoning = run_reasoning_module(text)
-            decision_result = route_decision(reasoning)
+            decision_result = route_decision(reasoning, text)          
+
+            response_sent = False   # <-- ADD THIS
+
+            if reasoning.get("decision") == "call_tool":
+                intent_json = reasoning
+                tool_name, tool_args = route_intent(intent_json, text)
+
+                results = await execute_tool(tool_name, tool_args)
+                reply = await continue_llm_with_tool_results(tool_name, results)
+
+                await ws.send_json({
+                    "session": session_id,
+                    "reply": reply,
+                    "reasoning": reasoning,
+                    "decision_result": decision_result,
+                    "stream": False
+                })
+
+                response_sent = True   # <-- ADD THIS
+                continue
 
             # Store user message
             conversations[session_id].append({"role": "user", "content": text})
@@ -534,19 +696,21 @@ async def chat_ws(ws: WebSocket):
                         "reply": token,
                         "stream": True
                     })
-
+                    response_sent = True   # no dup responses
+                    
                 conversations[session_id].append({
                     "role": "assistant",
                     "content": full_reply
                 })
 
-                await ws.send_json({
-                    "session": session_id,
-                    "reply": full_reply,
-                    "reasoning": reasoning,
-                    "decision_result": decision_result,
-                    "stream": False
-                })
+                if not response_sent:
+                    await ws.send_json({
+                        "session": session_id,
+                        "reply": full_reply,
+                        "reasoning": reasoning,
+                        "decision_result": decision_result,
+                        "stream": False
+                    })
 
             except Exception as e:
                 print("ERROR in /ws/chat:", e)

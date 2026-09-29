@@ -1,6 +1,6 @@
 
 // ------------------------------------------------------------
-// missing functions
+// load Modules functions
 // ------------------------------------------------------------
 
 export async function loadModels() {
@@ -20,6 +20,17 @@ export async function loadModels() {
 
         if (models.length > 0) {
             picker.value = models[0];
+            picker.addEventListener("change", async () => {
+                const newModel = picker.value;
+
+                await fetch("/api/set-model", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({ model: newModel })
+                });
+
+                refreshModelInfo();   // <-- THIS is the important part
+            });
         }
     } catch (e) {
         console.error("loadModels error:", e);
@@ -118,6 +129,7 @@ export function formatTimestamp(date) {
 // ------------------------------------------------------------
 // Add Message Bubble
 // ------------------------------------------------------------
+
 export function addMessage(role, text, reuseDiv = null, timestamp = null) {
     const ts = timestamp || new Date();
 
@@ -127,7 +139,15 @@ export function addMessage(role, text, reuseDiv = null, timestamp = null) {
         timestamp: ts.toISOString()
     });
 
-    let div = reuseDiv || document.createElement("div");
+    // --- STREAMING UPDATE PATH ---
+    if (reuseDiv) {
+        const body = reuseDiv.querySelector(".msg-body");
+        body.innerHTML = renderMarkdown(text);
+        return reuseDiv;
+    }
+
+    // --- NEW BUBBLE PATH ---
+    const div = document.createElement("div");
     div.className = `msg ${role}`;
 
     const header = document.createElement("div");
@@ -152,15 +172,12 @@ export function addMessage(role, text, reuseDiv = null, timestamp = null) {
     body.className = "msg-body";
     body.innerHTML = renderMarkdown(text);
 
-    div.innerHTML = "";
     div.appendChild(header);
     div.appendChild(body);
 
-    if (!reuseDiv) {
-        document.getElementById("chat-container").appendChild(div);
-    }
-
+    document.getElementById("chat-container").appendChild(div);
     div.scrollIntoView({ behavior: "smooth" });
+
     return div;
 }
 
@@ -235,7 +252,7 @@ export async function loadConfig() {
     await loadModels();
     await loadPersonalities();
     await refreshModelInfo();
-    setInterval(refreshModelInfo, 10000);
+    refreshModelInfo();
 
     connectWS();
 }
@@ -245,14 +262,7 @@ export async function loadConfig() {
 // ------------------------------------------------------------
 export async function sendGenerate(text) {
     showTyping();
-    const resp = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text })
-    }).then(r => r.json());
-
-    hideTyping();
-    addMessage("assistant", resp.reply);
+    sendWSMessage(text);
 }
 
 // ------------------------------------------------------------
