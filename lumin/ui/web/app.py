@@ -456,7 +456,7 @@ def tolerant_json_extract(raw: str) -> dict:
     except Exception:
         return None
 
-def sanitize_reasoning(parsed: dict) -> dict:
+def sanitize_reasoning(parsed: dict, user_message: str) -> dict:
     # Ensure required keys exist
     thought = parsed.get("thought", "").strip()
     intent = parsed.get("intent", "").strip()
@@ -470,6 +470,15 @@ def sanitize_reasoning(parsed: dict) -> dict:
     # Fix malformed plan
     if not isinstance(plan, list):
         plan = []
+        
+    # Prevent accidental tool calls
+    if decision == "call_tool":
+        # Only allow tool calls if user explicitly requests them
+        tool_keywords = ["search", "lookup", "find", "tool", "calculate", "run"]
+        
+    if not any(k in user_message.lower() for k in tool_keywords):
+        decision = "respond"
+        intent = "conversation"
 
     # Fix invalid decision
     if decision not in ["none", "respond", "call_tool"]:
@@ -509,7 +518,7 @@ def run_reasoning_module(user_message: str) -> dict:
         # Extract JSON substring
         parsed = tolerant_json_extract(raw)
         if parsed is not None:
-            parsed = sanitize_reasoning(parsed)
+            parsed = sanitize_reasoning(parsed, user_message)
 
             # --- NEW: conversational override based on user message ---
             conversation_keywords = [
@@ -610,22 +619,30 @@ async def chat_ws(ws: WebSocket):
     personality_prompt = load_personality_prompt(model_name)
 
     try:
-        
+        # Initial system message
         await ws.send_json({
             "session": session_id,
             "reply": "Connected. Ask me anything.",
-            "reasoning": {"thought": "Session initialized.", "intent": "none", "plan": [], "decision": "none"},
-            "stream": False
+            "reasoning": {
+                "thought": "Session initialized.",
+                "intent": "none",
+                "plan": [],
+                "decision": "none",
+            },
+            "stream": False,
         })
 
         while True:
             data = await ws.receive_json()
             text = data.get("text", "")
+
+            # ----------------------------
+            # Reasoning + decision routing
+            # ----------------------------
             reasoning = run_reasoning_module(text)
-            decision_result = route_decision(reasoning, text)          
+            decision_result = route_decision(reasoning, text)
 
-            response_sent = False   # <-- ADD THIS
-
+            # TOOL PATH
             if reasoning.get("decision") == "call_tool":
                 intent_json = reasoning
                 tool_name, tool_args = route_intent(intent_json, text)
@@ -638,27 +655,23 @@ async def chat_ws(ws: WebSocket):
                     "reply": reply,
                     "reasoning": reasoning,
                     "decision_result": decision_result,
-                    "stream": False
+                    "stream": False,
                 })
-
-                response_sent = True   # <-- ADD THIS
                 continue
 
-            # Store user message
+            # ----------------------------
+            # NORMAL CHAT PATH
+            # ----------------------------
             conversations[session_id].append({"role": "user", "content": text})
 
-            # ------------------------------------------------------------
-            # TRY RAG AUGMENTATION
-            # ------------------------------------------------------------
+            # Try RAG
             augmented_prompt = call_rag_server_safe(text, session_id)
-
             if augmented_prompt:
-                # Use RAG prompt
                 prompt_to_llm = augmented_prompt
             else:
-                # Fall back to your existing transcript behavior
                 transcript = personality_prompt.strip() + "\n\n"
-                for m in conversations[session_id]:
+                # limit history to last N messages to avoid bloat
+                for m in conversations[session_id][-8:]:
                     transcript += f"{m['role'].capitalize()}: {m['content']}\n"
                 transcript += "Assistant:"
                 prompt_to_llm = transcript
@@ -666,18 +679,21 @@ async def chat_ws(ws: WebSocket):
             payload = {
                 "model": model_name,
                 "prompt": prompt_to_llm,
-                "stream": True
+                "stream": True,
             }
 
             try:
                 r = requests.post(
                     f"{config['ollama']['url']}/api/generate",
                     json=payload,
-                    stream=True
+                    stream=True,
+                    timeout=300,
                 )
 
                 full_reply = ""
-
+                # ----------------------------
+                # STREAMING LOOP
+                # ----------------------------
                 for line in r.iter_lines():
                     if not line:
                         continue
@@ -691,36 +707,44 @@ async def chat_ws(ws: WebSocket):
                         continue
 
                     full_reply += token
+
+                    # send streaming chunk
                     await ws.send_json({
                         "session": session_id,
                         "reply": token,
-                        "stream": True
+                        "reasoning": None,
+                        "decision_result": None,
+                        "stream": True,
                     })
-                    response_sent = True   # no dup responses
-                    
+
+                # ----------------------------
+                # FINAL MESSAGE (ALWAYS)
+                # ----------------------------
                 conversations[session_id].append({
                     "role": "assistant",
-                    "content": full_reply
+                    "content": full_reply,
                 })
 
-                if not response_sent:
-                    await ws.send_json({
-                        "session": session_id,
-                        "reply": full_reply,
-                        "reasoning": reasoning,
-                        "decision_result": decision_result,
-                        "stream": False
-                    })
+                await ws.send_json({
+                    "session": session_id,
+                    "reply": "",
+                    "reasoning": reasoning,
+                    "decision_result": decision_result,
+                    "stream": False,
+                })
 
             except Exception as e:
                 print("ERROR in /ws/chat:", e)
                 await ws.send_json({
                     "session": session_id,
                     "reply": "Error contacting model.",
-                    "stream": False
+                    "reasoning": None,
+                    "decision_result": None,
+                    "stream": False,
                 })
 
     except WebSocketDisconnect:
         print("WebSocket disconnected")
     finally:
         conversations.pop(session_id, None)
+

@@ -139,7 +139,8 @@ export function addMessage(role, text, reuseDiv = null, timestamp = null) {
         timestamp: ts.toISOString()
     });
 
-    // --- STREAMING UPDATE PATH ---
+    console.log("addMessage called:", { role, reuseDiv, text });
+
     if (reuseDiv) {
         const body = reuseDiv.querySelector(".msg-body");
         body.innerHTML = renderMarkdown(text);
