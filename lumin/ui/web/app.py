@@ -3,8 +3,9 @@ import json
 import uuid
 import requests
 import subprocess
+import re
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,6 +29,63 @@ with open(CONFIG_PATH, "r") as f:
 
 PERSONALITY_DIR = os.path.join(os.path.dirname(CONFIG_PATH), "prompts")
 
+SYSTEM_PROMPT = """
+You are Lumin, a local, privacy-first, Markdown-fluent AI assistant.
+You respond with well-structured Markdown, using headings, lists, and code blocks when helpful.
+You are concise, friendly, and practical, and you never mention external services or clouds.
+
+Identity:
+- You run using whichever local model the user has configured (typically an Ollama model).
+- You do not know your internal architecture unless the user provides it.
+- You do not claim to be built from scratch, open-source, or hosted anywhere.
+- You do not claim affiliation with any company (Facebook, Google, etc.).
+- You do not invent details about your creators or development history.
+- You do not claim to run on your own server; you simply run wherever the user has configured you.
+
+Behavior:
+- You answer clearly, calmly, and truthfully.
+- You avoid speculation about your origin or capabilities.
+- If asked "What LLM are you?", respond: "I run on whichever local model you have configured."
+- If asked about your architecture, respond: "My behavior depends on your local configuration."
+- You respond using clean, well-structured Markdown when helpful.
+
+Boundaries:
+- You do not simulate internet access.
+- You do not fabricate tool results.
+- You do not invent system details.
+- You do not mention clouds or external services.
+"""
+
+REASONING_PROMPT = """
+You are a reasoning engine. Respond ONLY with valid JSON. 
+No prose. No explanations. No markdown. No commentary. 
+Your response MUST begin with '{' and end with '}'.
+
+JSON schema:
+{
+  "thought": "string",
+  "intent": "string",
+  "plan": ["string"],
+  "decision": "none | respond | call_tool"
+}
+
+Decision rules:
+- If the user asks for weather, set "decision": "call_tool" and "intent": "get_weather".
+- If the user asks for information requiring external lookup (weather, facts, search queries), set "decision": "call_tool".
+- If the user asks for anything requiring a tool, ALWAYS choose "call_tool".
+- Only choose "respond" for purely conversational or opinion questions.
+
+Rules:
+- Do NOT add any text before or after the JSON.
+- Do NOT include backticks.
+- Do NOT include comments.
+- Do NOT explain the JSON.
+- Do NOT apologize.
+- Do NOT add extra fields.
+- Do NOT add trailing commas.
+- Produce concise values.
+"""
+
 def load_personality_prompt(model_name: str) -> str:
     personalities = config.get("personalities", {})
     model_map = config.get("model_personality_map", {})
@@ -44,7 +102,7 @@ def load_personality_prompt(model_name: str) -> str:
             return f.read()
     except Exception as e:
         print(f"ERROR loading personality '{personality_name}':", e)
-        return SYSTEM_PROMPT   
+        return SYSTEM_PROMPT
 
 def call_rag_server(query: str, session_id: str) -> str | None:
     rag_cfg = config.get("rag", {})
@@ -64,8 +122,35 @@ def call_rag_server(query: str, session_id: str) -> str | None:
         return None
 
 # ------------------------------------------------------------
+# MEMORY (persistent)
+# ------------------------------------------------------------
+
+MEMORY_FILE = os.path.join(os.path.dirname(CONFIG_PATH), "memory.json")
+
+def load_memory():
+    try:
+        with open(MEMORY_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_memory(mem):
+    try:
+        with open(MEMORY_FILE, "w") as f:
+            json.dump(mem, f, indent=2)
+    except:
+        pass
+
+user_memory = load_memory()
+
+def init_session_memory(session_id: str):
+    if session_id not in user_memory:
+        user_memory[session_id] = {"name": None, "facts": []}
+
+# ------------------------------------------------------------
 # FASTAPI APP
 # ------------------------------------------------------------
+
 app = FastAPI()
 
 app.add_middleware(
@@ -94,7 +179,6 @@ def get_config():
             "model": config["ollama"]["model"],
             "mode": config["ollama"].get("mode", "chat")
         },
-        #- sjm 092626"ui": config["ui"]
         "ui": config.get("ui", {}).get("web", {})
     }
 
@@ -151,7 +235,7 @@ def list_models():
     except Exception as e:
         print("ERROR in /api/models:", e)
         return {"models": [], "error": str(e)}
-    
+
 @app.get("/api/model-info")
 def model_info():
     info = {
@@ -159,7 +243,6 @@ def model_info():
         "backend": config["ollama"]["url"],
     }
 
-    # Ollama ps
     try:
         r = requests.get(f"{config['ollama']['url']}/api/ps")
         ps = r.json()
@@ -167,7 +250,6 @@ def model_info():
     except Exception as e:
         info["running_error"] = str(e)
 
-    # GPU via nvidia-smi (best-effort)
     try:
         out = subprocess.check_output(
             [
@@ -197,10 +279,8 @@ async def set_model(req: dict):
     if not new_model:
         return {"ok": False, "error": "No model provided"}
 
-    # update in-memory config
     config["ollama"]["model"] = new_model
 
-    # write back to config.json
     try:
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2)
@@ -208,83 +288,16 @@ async def set_model(req: dict):
         print("ERROR writing config.json:", e)
         return {"ok": False, "error": str(e)}
 
-    return {"ok": True, "model": new_model}    
+    return {"ok": True, "model": new_model}
 
 # ------------------------------------------------------------
-# SYSTEM / PERSONA PROMPT
+# UPLOAD + GENERATE (non-stream)
 # ------------------------------------------------------------
-
-SYSTEM_PROMPT = """
-You are Lumin, a local, privacy-first, Markdown-fluent AI assistant.
-You respond with well-structured Markdown, using headings, lists, and code blocks when helpful.
-You are concise, friendly, and practical, and you never mention external services or clouds.
-
-Identity:
-- You run using whichever local model the user has configured (typically an Ollama model).
-- You do not know your internal architecture unless the user provides it.
-- You do not claim to be built from scratch, open-source, or hosted anywhere.
-- You do not claim affiliation with any company (Facebook, Google, etc.).
-- You do not invent details about your creators or development history.
-- You do not claim to run on your own server; you simply run wherever the user has configured you.
-
-Behavior:
-- You answer clearly, calmly, and truthfully.
-- You avoid speculation about your origin or capabilities.
-- If asked "What LLM are you?", respond: "I run on whichever local model you have configured."
-- If asked about your architecture, respond: "My behavior depends on your local configuration."
-- You respond using clean, well-structured Markdown when helpful.
-
-Boundaries:
-- You do not simulate internet access.
-- You do not fabricate tool results.
-- You do not invent system details.
-- You do not mention clouds or external services.
-
-"""
-
-REASONING_PROMPT = """
-You are a reasoning engine. Respond ONLY with valid JSON. 
-No prose. No explanations. No markdown. No commentary. 
-Your response MUST begin with '{' and end with '}'.
-
-JSON schema:
-{
-  "thought": "string",
-  "intent": "string",
-  "plan": ["string"],
-  "decision": "none | respond | call_tool"
-}
-
-Decision rules:
-- If the user asks for weather, set "decision": "call_tool" and "intent": "get_weather".
-- If the user asks for information requiring external lookup (weather, facts, search queries), set "decision": "call_tool".
-- If the user asks for anything requiring a tool, ALWAYS choose "call_tool".
-- Only choose "respond" for purely conversational or opinion questions.
-
-Rules:
-- Do NOT add any text before or after the JSON.
-- Do NOT include backticks.
-- Do NOT include comments.
-- Do NOT explain the JSON.
-- Do NOT apologize.
-- Do NOT add extra fields.
-- Do NOT add trailing commas.
-- Produce concise values.
-"""
-
-# ------------------------------------------------------------
-# GENERATE ENDPOINT (non-stream, Markdown-aware)
-# ------------------------------------------------------------
-
-from fastapi import UploadFile, File
-
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
-    # Read raw bytes
     raw = await file.read()
 
-    # Try to decode as UTF‑8 text
     try:
         text = raw.decode("utf-8")
         decoded = True
@@ -292,14 +305,10 @@ async def upload_file(file: UploadFile = File(...)):
         decoded = False
         text = None
 
-    # Determine active session
-    # If your chat system uses a session ID, retrieve it here.
-    # If not, fall back to a single global session.
     session_id = "default"
     if session_id not in conversations:
         conversations[session_id] = []
 
-    # Store file content in conversation history
     if decoded:
         conversations[session_id].append({
             "role": "user",
@@ -313,9 +322,8 @@ async def upload_file(file: UploadFile = File(...)):
             )
         })
 
-    # Build assistant reply
     if decoded:
-        preview = text[:500]  # prevent flooding the chat
+        preview = text[:500]
         return {
             "reply": (
                 f"I received **{file.filename}** and successfully read it.\n\n"
@@ -333,7 +341,6 @@ async def upload_file(file: UploadFile = File(...)):
             )
         }
 
-
 @app.post("/api/generate")
 async def generate(req: dict):
     text = req.get("text", "")
@@ -343,25 +350,20 @@ async def generate(req: dict):
     model_name = config["ollama"]["model"]
     personality_prompt = load_personality_prompt(model_name)
 
-    #- prompt = f"{personality_prompt.strip()}\n\nUser: {text}\nAssistant:"
     session_id = "default"
     if session_id not in conversations:
         conversations[session_id] = []
 
-    # Store the new user message
     conversations[session_id].append({"role": "user", "content": text})
 
-    # Build transcript
     transcript = personality_prompt.strip() + "\n\n"
     for m in conversations[session_id]:
         transcript += f"{m['role'].capitalize()}: {m['content']}\n"
     transcript += "Assistant:"
 
-    prompt = transcript
-
     payload = {
         "model": model_name,
-        "prompt": prompt,
+        "prompt": transcript,
         "stream": False
     }
 
@@ -371,84 +373,47 @@ async def generate(req: dict):
             json=payload
         )
 
-        print("OLLAMA RAW RESPONSE:", r.text)
-
         resp = r.json()
         return {"reply": resp.get("response", "")}
-
     except Exception as e:
         print("ERROR in /api/generate:", e)
         return {"reply": "Error contacting model."}
 
 # ------------------------------------------------------------
-# CHAT WEBSOCKET (streaming, Markdown-aware)
+# CHAT WEBSOCKET (streaming, memory-aware)
 # ------------------------------------------------------------
 
 conversations = {}
 
 def call_rag_server_safe(query: str, session_id: str) -> str | None:
-    """
-    Safe RAG call — returns None if RAG server is offline or errors.
-    """
     try:
-        
         rag_cfg = config.get("rag", {})
         resp = requests.post(
             rag_cfg["url"],
             json={"query": query, "session": session_id},
             timeout=2,
         )
-        
         data = resp.json()
         return data.get("augmented_prompt")
     except Exception as e:
         print("RAG unavailable:", e)
         return None
 
-# ------------------------------------------------------------
-# REASONING MODULE
-# ------------------------------------------------------------
-
-import re
-
-def tolerant_json_extract(raw: str) -> dict:
-    """
-    Extracts and repairs malformed JSON from LLM output.
-    Handles:
-    - missing closing brace
-    - missing commas between fields
-    - trailing commas
-    - extra text before/after JSON
-    - markdown fences
-    - comments
-    """
-
-    # Strip markdown fences
+def tolerant_json_extract(raw: str) -> dict | None:
     raw = raw.replace("```json", "").replace("```", "").strip()
-
-    # Extract the first {...} block
     start = raw.find("{")
     end = raw.rfind("}")
     if start == -1:
         return None
     if end == -1:
-        # Missing closing brace → add one
         raw = raw[start:] + "}"
     else:
         raw = raw[start:end+1]
 
-    # Remove comments
     raw = re.sub(r"//.*", "", raw)
     raw = re.sub(r"#.*", "", raw)
-
-    # Fix missing commas between fields:
-    # "value"\n  "next_key":
     raw = re.sub(r'"\s*\n\s*"(?=[a-zA-Z0-9_]+")', '",\n"', raw)
-
-    # Fix missing commas after arrays
     raw = re.sub(r']\s*\n\s*"(?=[a-zA-Z0-9_]+")', '],\n"', raw)
-
-    # Fix trailing commas before closing brace
     raw = re.sub(r',\s*}', '}', raw)
 
     try:
@@ -457,34 +422,23 @@ def tolerant_json_extract(raw: str) -> dict:
         return None
 
 def sanitize_reasoning(parsed: dict, user_message: str) -> dict:
-    # Ensure required keys exist
     thought = parsed.get("thought", "").strip()
-    intent = parsed.get("intent", "").strip()
+    intent = parsed.get("intent", "").strip() or "none"
     plan = parsed.get("plan", [])
     decision = parsed.get("decision", "none")
 
-    # Fix empty intent
-    if intent == "":
-        intent = "none"
-
-    # Fix malformed plan
     if not isinstance(plan, list):
         plan = []
-        
-    # Prevent accidental tool calls
-    if decision == "call_tool":
-        # Only allow tool calls if user explicitly requests them
-        tool_keywords = ["search", "lookup", "find", "tool", "calculate", "run"]
-        
-    if not any(k in user_message.lower() for k in tool_keywords):
-        decision = "respond"
-        intent = "conversation"
 
-    # Fix invalid decision
+    if decision == "call_tool":
+        tool_keywords = ["search", "lookup", "find", "tool", "calculate", "run"]
+        if not any(k in user_message.lower() for k in tool_keywords):
+            decision = "respond"
+            intent = "conversation"
+
     if decision not in ["none", "respond", "call_tool"]:
         decision = "none"
 
-    # --- NEW: memory-related messages should be conversational ---
     memory_words = ["remember", "recall", "memory"]
     if any(w in thought.lower() for w in memory_words):
         decision = "respond"
@@ -496,7 +450,6 @@ def sanitize_reasoning(parsed: dict, user_message: str) -> dict:
         "plan": plan,
         "decision": decision
     }
-
 
 def run_reasoning_module(user_message: str) -> dict:
     try:
@@ -512,15 +465,10 @@ def run_reasoning_module(user_message: str) -> dict:
         )
 
         raw = r.json().get("response", "").strip()
-
-        print("RAW REASONING OUTPUT:", raw)
-
-        # Extract JSON substring
         parsed = tolerant_json_extract(raw)
         if parsed is not None:
             parsed = sanitize_reasoning(parsed, user_message)
 
-            # --- NEW: conversational override based on user message ---
             conversation_keywords = [
                 "how are", "hello", "hi", "hey", "good morning", "good evening",
                 "what's up", "how is your day", "how are we"
@@ -530,41 +478,27 @@ def run_reasoning_module(user_message: str) -> dict:
                 parsed["decision"] = "respond"
                 parsed["intent"] = "conversation"
 
-            # --- NEW: global fallback override ---
-            # If the reasoning module can't classify the message,
-            # treat it as normal conversation instead of "no context".
             if parsed["decision"] == "none":
                 parsed["decision"] = "respond"
                 parsed["intent"] = "conversation"
 
             return parsed
-           
     except Exception as e:
         print("Reasoning module error:", e)
-        return {
-            "thought": f"Fallback reasoning for: {user_message}",
-            "intent": "unknown",
-            "plan": ["No plan — fallback."],
-            "decision": "none"
-        }
 
-# ------------------------------------------------------------
-# DECISION ROUTER (Non-action version)
-# ------------------------------------------------------------
+    return {
+        "thought": f"Fallback reasoning for: {user_message}",
+        "intent": "unknown",
+        "plan": ["No plan — fallback."],
+        "decision": "none"
+    }
 
 def route_decision(reasoning: dict, user_message: str):
     decision = reasoning.get("decision", "none")
-    intent = reasoning.get("intent", "conversation")
-
-    # If the agent should respond normally, do nothing.
     if decision == "respond":
         return "respond"
-
-    # If the agent should call a tool, signal that.
     if decision == "call_tool":
         return "call_tool"
-
-    # Fallback: treat as normal conversation
     return "respond"
 
 async def execute_tool(name, args):
@@ -572,20 +506,14 @@ async def execute_tool(name, args):
     tool = get_tool(name)
     if not tool:
         return {"error": f"Unknown tool '{name}'"}
-
     try:
-        
         if inspect.iscoroutinefunction(tool.__call__):
             return await tool(**args)
         return tool(config=config, **args)
-        
     except Exception as e:
         return {"error": str(e)}
 
 async def continue_llm_with_tool_results(tool_name, results):
-       
-    import uuid
-
     prefix = f"### TOOL_EXECUTION_{uuid.uuid4()} ###\n"
     prompt = (
         prefix +
@@ -593,13 +521,11 @@ async def continue_llm_with_tool_results(tool_name, results):
         f"{json.dumps(results, indent=2)}\n\n"
         "Answer the user's question using this information."
     )
-    
     payload = {
         "model": config["ollama"]["model"],
         "prompt": prompt,
         "stream": False
     }
-
     try:
         r = requests.post(
             f"{config['ollama']['url']}/api/generate",
@@ -614,12 +540,27 @@ async def chat_ws(ws: WebSocket):
     await ws.accept()
     session_id = str(uuid.uuid4())
     conversations[session_id] = []
+    init_session_memory(session_id)
 
     model_name = config["ollama"]["model"]
     personality_prompt = load_personality_prompt(model_name)
 
+    def sanitize_reply(text: str) -> str:
+        fallback_phrases = [
+            "provide the context",
+            "didn’t provide any context",
+            "no context",
+            "clarify the question",
+        ]
+        lines = text.split("\n")
+        cleaned = []
+        for line in lines:
+            if any(p in line.lower() for p in fallback_phrases):
+                continue
+            cleaned.append(line)
+        return "\n".join(cleaned).strip()
+
     try:
-        # Initial system message
         await ws.send_json({
             "session": session_id,
             "reply": "Connected. Ask me anything.",
@@ -629,12 +570,116 @@ async def chat_ws(ws: WebSocket):
                 "plan": [],
                 "decision": "none",
             },
+            "decision_result": None,
             "stream": False,
         })
 
         while True:
             data = await ws.receive_json()
-            text = data.get("text", "")
+            text = data.get("text", "").strip()
+
+            # ----------------------------
+            # MEMORY HANDLERS
+            # ----------------------------
+            if text.lower().startswith("my name is"):
+                name = text.split("is", 1)[1].strip()
+                user_memory[session_id]["name"] = name
+                save_memory(user_memory)
+
+                reply = f"Nice to meet you, {name}. I’ll remember that."
+                conversations[session_id].append({"role": "user", "content": text})
+                conversations[session_id].append({"role": "assistant", "content": reply})
+
+                await ws.send_json({
+                    "session": session_id,
+                    "reply": reply,
+                    "reasoning": {
+                        "thought": f"Stored user name: {name}",
+                        "intent": "store_name",
+                        "plan": ["Save name to memory."],
+                        "decision": "memory_update",
+                    },
+                    "decision_result": None,
+                    "stream": False,
+                })
+                continue
+
+            if "what is my name" in text.lower():
+                name = user_memory[session_id].get("name")
+                conversations[session_id].append({"role": "user", "content": text})
+
+                if name:
+                    reply = f"Your name is {name}."
+                else:
+                    reply = "I don’t have your name stored yet. You can tell me by saying: 'My name is ...'."
+
+                conversations[session_id].append({"role": "assistant", "content": reply})
+
+                await ws.send_json({
+                    "session": session_id,
+                    "reply": reply,
+                    "reasoning": {
+                        "thought": "Answered name from memory.",
+                        "intent": "recall_name",
+                        "plan": [],
+                        "decision": "memory_read",
+                    },
+                    "decision_result": None,
+                    "stream": False,
+                })
+                continue
+
+            if text.lower().startswith("remember that"):
+                fact = text.split("that", 1)[1].strip()
+                user_memory[session_id]["facts"].append(fact)
+                save_memory(user_memory)
+
+                reply = f"Got it. I’ll remember that: {fact}"
+                conversations[session_id].append({"role": "user", "content": text})
+                conversations[session_id].append({"role": "assistant", "content": reply})
+
+                await ws.send_json({
+                    "session": session_id,
+                    "reply": reply,
+                    "reasoning": {
+                        "thought": f"Stored user fact: {fact}",
+                        "intent": "store_fact",
+                        "plan": ["Save fact to memory."],
+                        "decision": "memory_update",
+                    },
+                    "decision_result": None,
+                    "stream": False,
+                })
+                continue
+
+            if "what do you remember" in text.lower():
+                mem = user_memory[session_id]
+                conversations[session_id].append({"role": "user", "content": text})
+
+                reply_lines = ["Here’s what I remember about you:"]
+                if mem.get("name"):
+                    reply_lines.append(f"- Your name is {mem['name']}")
+                for fact in mem.get("facts", []):
+                    reply_lines.append(f"- {fact}")
+                if len(reply_lines) == 1:
+                    reply_lines.append("- I don’t have anything stored yet.")
+
+                reply = "\n".join(reply_lines)
+                conversations[session_id].append({"role": "assistant", "content": reply})
+
+                await ws.send_json({
+                    "session": session_id,
+                    "reply": reply,
+                    "reasoning": {
+                        "thought": "Listed stored memory.",
+                        "intent": "recall_memory",
+                        "plan": [],
+                        "decision": "memory_read",
+                    },
+                    "decision_result": None,
+                    "stream": False,
+                })
+                continue
 
             # ----------------------------
             # Reasoning + decision routing
@@ -642,7 +687,6 @@ async def chat_ws(ws: WebSocket):
             reasoning = run_reasoning_module(text)
             decision_result = route_decision(reasoning, text)
 
-            # TOOL PATH
             if reasoning.get("decision") == "call_tool":
                 intent_json = reasoning
                 tool_name, tool_args = route_intent(intent_json, text)
@@ -650,9 +694,18 @@ async def chat_ws(ws: WebSocket):
                 results = await execute_tool(tool_name, tool_args)
                 reply = await continue_llm_with_tool_results(tool_name, results)
 
+                clean_reply = sanitize_reply(reply)
+
+                conversations[session_id].append({"role": "user", "content": text})
+                if clean_reply:
+                    conversations[session_id].append({
+                        "role": "assistant",
+                        "content": clean_reply,
+                    })
+
                 await ws.send_json({
                     "session": session_id,
-                    "reply": reply,
+                    "reply": clean_reply,
                     "reasoning": reasoning,
                     "decision_result": decision_result,
                     "stream": False,
@@ -664,13 +717,23 @@ async def chat_ws(ws: WebSocket):
             # ----------------------------
             conversations[session_id].append({"role": "user", "content": text})
 
-            # Try RAG
             augmented_prompt = call_rag_server_safe(text, session_id)
             if augmented_prompt:
                 prompt_to_llm = augmented_prompt
             else:
+                mem = user_memory.get(session_id, {"name": None, "facts": []})
+                memory_text = ""
+                if mem.get("name"):
+                    memory_text += f"User name: {mem['name']}\n"
+                if mem.get("facts"):
+                    memory_text += "Known facts:\n"
+                    for f in mem["facts"]:
+                        memory_text += f"- {f}\n"
+
                 transcript = personality_prompt.strip() + "\n\n"
-                # limit history to last N messages to avoid bloat
+                if memory_text:
+                    transcript += "Memory:\n" + memory_text + "\n"
+                transcript += "Conversation:\n"
                 for m in conversations[session_id][-8:]:
                     transcript += f"{m['role'].capitalize()}: {m['content']}\n"
                 transcript += "Assistant:"
@@ -691,9 +754,7 @@ async def chat_ws(ws: WebSocket):
                 )
 
                 full_reply = ""
-                # ----------------------------
-                # STREAMING LOOP
-                # ----------------------------
+
                 for line in r.iter_lines():
                     if not line:
                         continue
@@ -708,7 +769,6 @@ async def chat_ws(ws: WebSocket):
 
                     full_reply += token
 
-                    # send streaming chunk
                     await ws.send_json({
                         "session": session_id,
                         "reply": token,
@@ -717,13 +777,13 @@ async def chat_ws(ws: WebSocket):
                         "stream": True,
                     })
 
-                # ----------------------------
-                # FINAL MESSAGE (ALWAYS)
-                # ----------------------------
-                conversations[session_id].append({
-                    "role": "assistant",
-                    "content": full_reply,
-                })
+                clean_reply = sanitize_reply(full_reply)
+
+                if clean_reply:
+                    conversations[session_id].append({
+                        "role": "assistant",
+                        "content": clean_reply,
+                    })
 
                 await ws.send_json({
                     "session": session_id,
@@ -747,4 +807,4 @@ async def chat_ws(ws: WebSocket):
         print("WebSocket disconnected")
     finally:
         conversations.pop(session_id, None)
-
+        # keep user_memory[session_id] so persistence works
