@@ -4,6 +4,8 @@ import uuid
 import requests
 import subprocess
 import re
+import time
+import math
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.responses import FileResponse
@@ -13,17 +15,20 @@ from lumin.tools.router import route_intent
 from lumin.tools.registry import get as get_tool
 
 # ------------------------------------------------------------
-# PATHS
+# PATHS / LIMITS
 # ------------------------------------------------------------
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
 STATIC_PATH = os.path.join(BASE_DIR, "static")
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), "config.json")
+MEMORY_TTL_SECONDS = 30 * 24 * 3600  # 30 days
+MEMORY_MAX_ITEMS = 200
 
 # ------------------------------------------------------------
 # LOAD CONFIG.JSON
 # ------------------------------------------------------------
+
 with open(CONFIG_PATH, "r") as f:
     config = json.load(f)
 
@@ -141,11 +146,51 @@ def save_memory(mem):
     except:
         pass
 
+def prune_explicit_memory(mem):
+    for sid, data in mem.items():
+        facts = data.get("facts", [])
+        if len(facts) > MEMORY_MAX_ITEMS:
+            mem[sid]["facts"] = facts[-MEMORY_MAX_ITEMS:]
+    return mem
+
 user_memory = load_memory()
+
+# ------------------------------------------------------------
+# SEMANTIC MEMORY (embeddings)
+# ------------------------------------------------------------
+
+EMBED_MEMORY_FILE = os.path.join(os.path.dirname(CONFIG_PATH), "embed_memory.json")
+
+def load_embed_memory():
+    try:
+        with open(EMBED_MEMORY_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_embed_memory(mem):
+    try:
+        with open(EMBED_MEMORY_FILE, "w") as f:
+            json.dump(mem, f, indent=2)
+    except:
+        pass
+
+def prune_embed_memory(mem):
+    now = int(time.time())
+    for sid, items in mem.items():
+        items = [it for it in items if now - it.get("ts", now) <= MEMORY_TTL_SECONDS]
+        if len(items) > MEMORY_MAX_ITEMS:
+            items = items[-MEMORY_MAX_ITEMS:]
+        mem[sid] = items
+    return mem
+
+embed_memory = load_embed_memory()  # { session_id: [ { "text": str, "embedding": [float], "ts": int } ] }
 
 def init_session_memory(session_id: str):
     if session_id not in user_memory:
         user_memory[session_id] = {"name": None, "facts": []}
+    if session_id not in embed_memory:
+        embed_memory[session_id] = []
 
 # ------------------------------------------------------------
 # FASTAPI APP
@@ -294,6 +339,8 @@ async def set_model(req: dict):
 # UPLOAD + GENERATE (non-stream)
 # ------------------------------------------------------------
 
+conversations = {}
+
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
     raw = await file.read()
@@ -380,10 +427,8 @@ async def generate(req: dict):
         return {"reply": "Error contacting model."}
 
 # ------------------------------------------------------------
-# CHAT WEBSOCKET (streaming, memory-aware)
+# REASONING / TOOLS
 # ------------------------------------------------------------
-
-conversations = {}
 
 def call_rag_server_safe(query: str, session_id: str) -> str | None:
     try:
@@ -535,8 +580,51 @@ async def continue_llm_with_tool_results(tool_name, results):
     except Exception:
         return "Error contacting model."
 
+# ------------------------------------------------------------
+# EMBEDDINGS HELPERS
+# ------------------------------------------------------------
+
+def get_embedding(text: str) -> list | None:
+    try:
+        payload = {
+            "model": config["ollama"].get("embedding_model", config["ollama"]["model"]),
+            "prompt": text,
+            "stream": False
+        }
+        r = requests.post(f"{config['ollama']['url']}/api/embeddings", json=payload)
+        return r.json().get("embedding")
+    except Exception as e:
+        print("Embedding error:", e)
+        return None
+
+def cosine(a, b):
+    return sum(x*y for x, y in zip(a, b)) / (
+        math.sqrt(sum(x*x for x in a)) * math.sqrt(sum(y*y for y in b)) + 1e-8
+    )
+
+def semantic_recall(session_id: str, query: str, top_k: int = 5):
+    emb_q = get_embedding(query)
+    if emb_q is None:
+        return []
+
+    items = embed_memory.get(session_id, [])
+    scored = []
+    for item in items:
+        emb = item.get("embedding")
+        if not emb:
+            continue
+        scored.append((cosine(emb_q, emb), item["text"]))
+
+    scored.sort(reverse=True)
+    return [t for _, t in scored[:top_k]]
+
+# ------------------------------------------------------------
+# CHAT WEBSOCKET (streaming, memory + semantic)
+# ------------------------------------------------------------
+
 @app.websocket("/ws/chat")
 async def chat_ws(ws: WebSocket):
+    global user_memory, embed_memory
     await ws.accept()
     session_id = str(uuid.uuid4())
     conversations[session_id] = []
@@ -584,6 +672,7 @@ async def chat_ws(ws: WebSocket):
             if text.lower().startswith("my name is"):
                 name = text.split("is", 1)[1].strip()
                 user_memory[session_id]["name"] = name
+                user_memory = prune_explicit_memory(user_memory)
                 save_memory(user_memory)
 
                 reply = f"Nice to meet you, {name}. I’ll remember that."
@@ -632,7 +721,18 @@ async def chat_ws(ws: WebSocket):
             if text.lower().startswith("remember that"):
                 fact = text.split("that", 1)[1].strip()
                 user_memory[session_id]["facts"].append(fact)
+                user_memory = prune_explicit_memory(user_memory)
                 save_memory(user_memory)
+
+                emb = get_embedding(fact)
+                if emb is not None:
+                    embed_memory[session_id].append({
+                        "text": fact,
+                        "embedding": emb,
+                        "ts": int(time.time())
+                    })
+                    embed_memory = prune_embed_memory(embed_memory)
+                    save_embed_memory(embed_memory)
 
                 reply = f"Got it. I’ll remember that: {fact}"
                 conversations[session_id].append({"role": "user", "content": text})
@@ -652,6 +752,65 @@ async def chat_ws(ws: WebSocket):
                 })
                 continue
 
+            if text.lower().startswith("forget that"):
+                target = text.split("that", 1)[1].strip().lower()
+
+                facts = user_memory[session_id].get("facts", [])
+                new_facts = [f for f in facts if f.lower() != target]
+                user_memory[session_id]["facts"] = new_facts
+                user_memory = prune_explicit_memory(user_memory)
+                save_memory(user_memory)
+
+                items = embed_memory.get(session_id, [])
+                items = [it for it in items if it["text"].lower() != target]
+                embed_memory[session_id] = items
+                embed_memory = prune_embed_memory(embed_memory)
+                save_embed_memory(embed_memory)
+
+                reply = f"Okay, I’ve forgotten that: {target}"
+                conversations[session_id].append({"role": "user", "content": text})
+                conversations[session_id].append({"role": "assistant", "content": reply})
+
+                await ws.send_json({
+                    "session": session_id,
+                    "reply": reply,
+                    "reasoning": {
+                        "thought": f"Removed memory: {target}",
+                        "intent": "memory_delete",
+                        "plan": [],
+                        "decision": "memory_update",
+                    },
+                    "decision_result": None,
+                    "stream": False,
+                })
+                continue
+
+            if "forget everything" in text.lower():
+                user_memory[session_id] = {"name": None, "facts": []}
+                embed_memory[session_id] = []
+                user_memory = prune_explicit_memory(user_memory)
+                embed_memory = prune_embed_memory(embed_memory)
+                save_memory(user_memory)
+                save_embed_memory(embed_memory)
+
+                reply = "I’ve cleared everything I remember about you."
+                conversations[session_id].append({"role": "user", "content": text})
+                conversations[session_id].append({"role": "assistant", "content": reply})
+
+                await ws.send_json({
+                    "session": session_id,
+                    "reply": reply,
+                    "reasoning": {
+                        "thought": "Cleared all user memory.",
+                        "intent": "memory_delete_all",
+                        "plan": [],
+                        "decision": "memory_update",
+                    },
+                    "decision_result": None,
+                    "stream": False,
+                })
+                continue
+
             if "what do you remember" in text.lower():
                 mem = user_memory[session_id]
                 conversations[session_id].append({"role": "user", "content": text})
@@ -661,6 +820,13 @@ async def chat_ws(ws: WebSocket):
                     reply_lines.append(f"- Your name is {mem['name']}")
                 for fact in mem.get("facts", []):
                     reply_lines.append(f"- {fact}")
+
+                semantic = semantic_recall(session_id, text)
+                if semantic:
+                    reply_lines.append("Semantic memory:")
+                    for f in semantic:
+                        reply_lines.append(f"- {f}")
+
                 if len(reply_lines) == 1:
                     reply_lines.append("- I don’t have anything stored yet.")
 
@@ -807,4 +973,4 @@ async def chat_ws(ws: WebSocket):
         print("WebSocket disconnected")
     finally:
         conversations.pop(session_id, None)
-        # keep user_memory[session_id] so persistence works
+        # keep user_memory[session_id] and embed_memory[session_id] so persistence works
