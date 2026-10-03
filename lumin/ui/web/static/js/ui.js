@@ -1,335 +1,150 @@
+// ui.js
 
-// ------------------------------------------------------------
-// load Modules functions
-// ------------------------------------------------------------
-
-export async function loadModels() {
-    try {
-        const resp = await fetch("/api/models").then(r => r.json());
-        models = resp.models || [];
-
-        const picker = document.getElementById("model-picker");
-        picker.innerHTML = "";
-
-        models.forEach(m => {
-            const opt = document.createElement("option");
-            opt.value = m;
-            opt.textContent = m;
-            picker.appendChild(opt);
-        });
-
-        if (models.length > 0) {
-            picker.value = models[0];
-            picker.addEventListener("change", async () => {
-                const newModel = picker.value;
-
-                await fetch("/api/set-model", {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({ model: newModel })
-                });
-
-                refreshModelInfo();   // <-- THIS is the important part
-            });
-        }
-    } catch (e) {
-        console.error("loadModels error:", e);
-    }
+function $(id) {
+    return document.getElementById(id);
 }
 
-export async function loadPersonalities() {
-    try {
-        const resp = await fetch("/api/personalities").then(r => r.json());
-        personalities = resp.personalities || [];
+// Chat rendering
+window.renderUserMessage = function (text) {
+    const chat = $("chat-window");
+    if (!chat) return;
 
-        const picker = document.getElementById("personality-picker");
-        picker.innerHTML = "";
+    const row = document.createElement("div");
+    row.className = "flex justify-end mb-2";
 
-        personalities.forEach(p => {
-            const opt = document.createElement("option");
-            opt.value = p.id;
-            opt.textContent = p.name;
-            picker.appendChild(opt);
-        });
+    const bubble = document.createElement("div");
+    bubble.className = "bubble-user";
+    bubble.textContent = text;
 
-        if (personalities.length > 0) {
-            currentPersonality = personalities[0].id;
-            picker.value = currentPersonality;
-        }
-    } catch (e) {
-        console.error("loadPersonalities error:", e);
-    }
-}
+    row.appendChild(bubble);
+    chat.appendChild(row);
+    chat.scrollTop = chat.scrollHeight;
+};
 
-// ------------------------------------------------------------
-// UI MODULE — Corrected with all required exports
-// ------------------------------------------------------------
+window.renderAssistantMessage = function (text) {
+    const chat = $("chat-window");
+    if (!chat) return;
 
-export let config = null;
-export let configLoaded = false;
-export let models = [];
-export let personalities = [];
-export let currentPersonality = null;
-export let chatLog = [];
+    const row = document.createElement("div");
+    row.className = "flex justify-start mb-2";
 
-// ------------------------------------------------------------
-// Avatar + Typing Text
-// ------------------------------------------------------------
-export function getAvatar(role) {
-    if (role === "user") return "🧑";
-    switch (currentPersonality) {
-        case "developer": return "💻";
-        case "teacher": return "📘";
-        case "playful": return "🎉";
-        case "concise": return "⚡";
-        default: return "✨";
-    }
-}
+    const bubble = document.createElement("div");
+    bubble.className = "bubble-assistant whitespace-pre-wrap";
+    bubble.textContent = text;
 
-export function getTypingText() {
-    switch (currentPersonality) {
-        case "developer": return "Compiling thoughts…";
-        case "teacher": return "Preparing explanation…";
-        case "playful": return "Lumin is vibing…";
-        case "concise": return "Thinking…";
-        default: return "Lumin is thinking…";
-    }
-}
+    row.appendChild(bubble);
+    chat.appendChild(row);
+    chat.scrollTop = chat.scrollHeight;
+};
 
-// ------------------------------------------------------------
-// Markdown Rendering
-// ------------------------------------------------------------
-export function renderMarkdown(text) {
-    const html = marked.parse(text);
-    const container = document.createElement("div");
-    container.innerHTML = html;
+// Streaming: append to last assistant bubble
+window.renderAssistantStream = function (token) {
+    const chat = $("chat-window");
+    if (!chat) return;
 
-    container.querySelectorAll("pre code").forEach(block => {
-        hljs.highlightElement(block);
-        const pre = block.parentElement;
-
-        const btn = document.createElement("button");
-        btn.textContent = "Copy";
-        btn.className = "copy-btn";
-        btn.onclick = () => navigator.clipboard.writeText(block.innerText);
-
-        pre.appendChild(btn);
-    });
-
-    return container.innerHTML;
-}
-
-// ------------------------------------------------------------
-// Timestamp
-// ------------------------------------------------------------
-export function formatTimestamp(date) {
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-// ------------------------------------------------------------
-// Add Message Bubble
-// ------------------------------------------------------------
-
-export function addMessage(role, text, reuseDiv = null, timestamp = null) {
-    const ts = timestamp || new Date();
-
-    chatLog.push({
-        role,
-        content: text,
-        timestamp: ts.toISOString()
-    });
-
-    console.log("addMessage called:", { role, reuseDiv, text });
-
-    if (reuseDiv) {
-        const body = reuseDiv.querySelector(".msg-body");
-        body.innerHTML = renderMarkdown(text);
-        return reuseDiv;
-    }
-
-    // --- NEW BUBBLE PATH ---
-    const div = document.createElement("div");
-    div.className = `msg ${role}`;
-
-    const header = document.createElement("div");
-    header.className = "msg-header";
-
-    const avatarSpan = document.createElement("span");
-    avatarSpan.className = "msg-avatar";
-    avatarSpan.textContent = getAvatar(role);
-
-    const roleSpan = document.createElement("span");
-    roleSpan.textContent = role === "user" ? "You" : "Lumin";
-
-    const tsSpan = document.createElement("span");
-    tsSpan.className = "msg-timestamp";
-    tsSpan.textContent = formatTimestamp(ts);
-
-    header.appendChild(avatarSpan);
-    header.appendChild(roleSpan);
-    header.appendChild(tsSpan);
-
-    const body = document.createElement("div");
-    body.className = "msg-body";
-    body.innerHTML = renderMarkdown(text);
-
-    div.appendChild(header);
-    div.appendChild(body);
-
-    document.getElementById("chat-container").appendChild(div);
-    div.scrollIntoView({ behavior: "smooth" });
-
-    return div;
-}
-
-// ------------------------------------------------------------
-// Typing Indicator
-// ------------------------------------------------------------
-export function showTyping() {
-    if (!document.getElementById("typing")) {
-        const t = document.createElement("div");
-        t.id = "typing";
-        t.className = "msg assistant";
-        t.textContent = getTypingText();
-        document.getElementById("chat-container").appendChild(t);
-        t.scrollIntoView({ behavior: "smooth" });
-    }
-}
-
-export function hideTyping() {
-    const t = document.getElementById("typing");
-    if (t) t.remove();
-}
-
-// ------------------------------------------------------------
-// Connection Status
-// ------------------------------------------------------------
-export function updateConnectionStatus(status) {
-    const dot = document.getElementById("connection-dot");
-    const label = document.getElementById("connection-label");
-    if (!dot || !label) return;
-
-    if (status === true || status === "connected") {
-        dot.style.background = "#22c55e";
-        label.textContent = "Connected";
-    } else if (status === "connecting") {
-        dot.style.background = "#eab308";
-        label.textContent = "Connecting…";
+    let lastRow = chat.lastElementChild;
+    if (!lastRow || !lastRow.className.includes("justify-start")) {
+        // create new assistant row
+        lastRow = document.createElement("div");
+        lastRow.className = "flex justify-start mb-2";
+        const bubble = document.createElement("div");
+        bubble.className = "bubble-assistant whitespace-pre-wrap";
+        bubble.textContent = token;
+        lastRow.appendChild(bubble);
+        chat.appendChild(lastRow);
     } else {
-        dot.style.background = "#ef4444";
-        label.textContent = "Offline";
+        const bubble = lastRow.firstElementChild;
+        bubble.textContent += token;
     }
+
+    chat.scrollTop = chat.scrollHeight;
+};
+
+// Reasoning panel
+window.updateReasoningPanel = function (reasoning) {
+    const panel = $("reasoning-panel");
+    if (!panel) return;
+    panel.textContent = JSON.stringify(reasoning, null, 2);
+};
+
+// Tool decision log
+window.logToolDecision = function (decision) {
+    const panel = $("tool-panel");
+    if (!panel) return;
+    const existing = panel.textContent || "";
+    panel.textContent = existing + "\n" + JSON.stringify(decision, null, 2);
+};
+
+// RAG panel hook
+window.updateRagPanel = function (info) {
+    const panel = $("rag-panel");
+    if (!panel) return;
+    panel.textContent = JSON.stringify(info, null, 2);
+};
+
+// Semantic memory panel hook
+window.updateSemanticPanel = function (info) {
+    const panel = $("semantic-panel");
+    if (!panel) return;
+    panel.textContent = JSON.stringify(info, null, 2);
+};
+
+// System info panel
+function loadSystemInfo() {
+    fetch("/api/model-info")
+        .then(r => r.json())
+        .then(data => {
+            const panel = $("system-panel");
+            if (!panel) return;
+            panel.textContent = JSON.stringify(data, null, 2);
+        })
+        .catch(err => console.error("System info error:", err));
 }
 
-// ------------------------------------------------------------
-// Model Info
-// ------------------------------------------------------------
-export async function refreshModelInfo() {
-    try {
-        const info = await fetch("/api/model-info").then(r => r.json());
-        const div = document.getElementById("model-info");
+// Models + personalities
+function loadConfigAndModels() {
+    fetch("/config")
+        .then(r => r.json())
+        .then(cfg => {
+            const modelSelect = $("model-select");
+            if (modelSelect && cfg.ollama && cfg.ollama.model) {
+                // current model will be set after /api/models
+            }
+        });
 
-        let text = `Model: ${info.model}`;
-        if (info.gpu) {
-            text += ` | GPU: ${info.gpu.name} ${info.gpu.memory_used}/${info.gpu.memory_total} (${info.gpu.utilization}, ${info.gpu.temperature})`;
-        }
-        div.textContent = text;
-    } catch (e) {
-        console.error("refreshModelInfo error:", e);
-    }
+    fetch("/api/models")
+        .then(r => r.json())
+        .then(data => {
+            const modelSelect = $("model-select");
+            if (!modelSelect) return;
+            modelSelect.innerHTML = "";
+            (data.models || []).forEach(m => {
+                const opt = document.createElement("option");
+                opt.value = m;
+                opt.textContent = m;
+                modelSelect.appendChild(opt);
+            });
+        });
+
+    fetch("/api/personalities")
+        .then(r => r.json())
+        .then(data => {
+            const sel = $("personality-select");
+            if (!sel) return;
+            sel.innerHTML = "";
+            (data.personalities || []).forEach(p => {
+                const opt = document.createElement("option");
+                opt.value = p.id;
+                opt.textContent = p.name;
+                sel.appendChild(opt);
+            });
+            if (data.current_personality) {
+                sel.value = data.current_personality;
+            }
+        });
 }
 
-// ------------------------------------------------------------
-// Load Config
-// ------------------------------------------------------------
-import { connectWS, sendWSMessage } from "./websocket.js";
-
-export async function loadConfig() {
-    if (configLoaded) return;
-    configLoaded = true;
-
-    config = await fetch("/config").then(r => r.json());
-
-    await loadModels();
-    await loadPersonalities();
-    await refreshModelInfo();
-    refreshModelInfo();
-
-    connectWS();
-}
-
-// ------------------------------------------------------------
-// Generate Mode
-// ------------------------------------------------------------
-export async function sendGenerate(text) {
-    showTyping();
-    sendWSMessage(text);
-}
-
-// ------------------------------------------------------------
-// Export Chat
-// ------------------------------------------------------------
-export function exportChat() {
-    if (!chatLog.length) return;
-    const blob = new Blob([JSON.stringify(chatLog, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `lumin-chat-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-}
-
-// ------------------------------------------------------------
-// Input Handlers
-// ------------------------------------------------------------
-export function initInputHandlers() {
-    document.getElementById("export-chat").onclick = exportChat;
-
-    document.getElementById("send").onclick = () => {
-        if (!configLoaded) return;
-
-        const text = document.getElementById("input").value.trim();
-        if (!text) return;
-
-        addMessage("user", text);
-        document.getElementById("input").value = "";
-
-        if (config.ollama.mode === "generate") {
-            sendGenerate(text);
-        } else {
-            showTyping();
-            sendWSMessage(text);
-        }
-    };
-
-    document.getElementById("input").addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            document.getElementById("send").click();
-        }
-    });
-
-    document.getElementById("upload-btn").onclick = () => {
-        document.getElementById("file-input").click();
-    };
-
-    document.getElementById("file-input").onchange = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        addMessage("user", `📁 Uploaded: **${file.name}**`);
-
-        const formData = new FormData();
-        formData.append("file", file);
-
-        const resp = await fetch("/api/upload", {
-            method: "POST",
-            body: formData
-        }).then(r => r.json());
-
-        addMessage("assistant", resp.reply);
-    };
-}
+document.addEventListener("DOMContentLoaded", () => {
+    loadConfigAndModels();
+    loadSystemInfo();
+});

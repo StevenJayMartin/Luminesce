@@ -1,80 +1,69 @@
-import { showTyping, hideTyping, updateConnectionStatus, addMessage } from "./ui.js";
+// websocket.js
+let ws = null;
+let currentSession = null;
 
-export let ws = null;
-let wsConnecting = false;
-export let session = null;
-
-export function connectWS() {
-    if (wsConnecting) return;
-    wsConnecting = true;
-
-    updateConnectionStatus("connecting");
-
-    ws = new WebSocket(`ws://${location.host}/ws/chat`);
+function connectWebSocket() {
+    ws = new WebSocket(`ws://${window.location.host}/ws/chat`);
 
     ws.onopen = () => {
-        wsConnecting = false;
-        updateConnectionStatus("connected");
+        console.log("WebSocket connected");
+    };
+
+    ws.onmessage = (event) => {
+        try {
+            const msg = JSON.parse(event.data);
+
+            // Initial connection message
+            if (msg.session && !currentSession) {
+                currentSession = msg.session;
+            }
+
+            // Streaming tokens
+            if (msg.stream === true) {
+                if (msg.reply) {
+                    window.renderAssistantStream(msg.reply);
+                }
+                return;
+            }
+
+            // Final reply (non-stream)
+            if (msg.reply) {
+                window.renderAssistantMessage(msg.reply);
+            }
+
+            // Reasoning panel
+            if (msg.reasoning) {
+                window.updateReasoningPanel(msg.reasoning);
+            }
+
+            // Decision result (tool vs respond)
+            if (msg.decision_result) {
+                window.logToolDecision(msg.decision_result);
+            }
+        } catch (e) {
+            console.error("WS message error:", e, event.data);
+        }
     };
 
     ws.onclose = () => {
-        wsConnecting = false;
-        updateConnectionStatus("connecting");
-        setTimeout(connectWS, 1000);
+        console.log("WebSocket closed, reconnecting in 2s...");
+        setTimeout(connectWebSocket, 2000);
     };
 
-    ws.onerror = () => {
-        updateConnectionStatus("offline");
-    };
-
-    let currentAssistantDiv = null;
-
-    ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        session = data.session;
-
-        if (data.reasoning) {
-            const panel = document.getElementById("reasoning-panel");
-            const text = document.getElementById("reasoning-text");
-            panel.style.display = "block";
-            text.innerText = JSON.stringify(data.reasoning, null, 2);
-        }
-
-        const isStream = !!data.stream;
-        const chunk = data.reply || "";
-
-        // ---------------------------
-        // NON‑STREAM (final message)
-        // ---------------------------
-        if (!isStream) {
-            hideTyping();
-            if (chunk) {
-                addMessage("assistant", chunk);   // ALWAYS new bubble
-            }
-            currentAssistantDiv = null;           // reset for next assistant message
-            return;
-        }
-
-        // ---------------------------
-        // STREAMING
-        // ---------------------------
-        showTyping();
-
-        // Create bubble ONCE at start of stream
-        if (!currentAssistantDiv) {
-            currentAssistantDiv = addMessage("assistant", "");
-        }
-
-        // ⭐ Append ONLY to msg-body
-        const body = currentAssistantDiv.querySelector(".msg-body");
-        body.innerHTML += chunk;
+    ws.onerror = (err) => {
+        console.error("WebSocket error:", err);
     };
 }
 
-export function sendWSMessage(text) {
+window.wsSend = function (text) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-        console.warn("WS not connected");
+        console.warn("WebSocket not ready");
         return;
     }
-    ws.send(JSON.stringify({ session, text }));
-}
+    window.renderUserMessage(text);
+    ws.send(JSON.stringify({ text }));
+};
+
+document.addEventListener("DOMContentLoaded", () => {
+    connectWebSocket();
+});
