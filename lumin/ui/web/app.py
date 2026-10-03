@@ -335,6 +335,24 @@ async def set_model(req: dict):
 
     return {"ok": True, "model": new_model}
 
+@app.get("/api/memory")
+def get_memory():
+    """
+    Return all explicit memory for all sessions.
+    The UI can decide how to display it.
+    """
+    try:
+        return {"memory": user_memory}
+    except Exception as e:
+        return {"memory": {}, "error": str(e)}
+    
+@app.get("/api/memory/{session_id}")
+def get_memory_for_session(session_id: str):
+    mem = user_memory.get(session_id)
+    if not mem:
+        return {"memory": {}, "error": "Unknown session"}
+    return {"memory": mem}
+
 # ------------------------------------------------------------
 # UPLOAD + GENERATE (non-stream)
 # ------------------------------------------------------------

@@ -13,9 +13,10 @@ function connectWebSocket() {
         try {
             const msg = JSON.parse(event.data);
 
-            // Initial connection message
-            if (msg.session && !currentSession) {
+            // Store session + load memory immediately
+            if (msg.session) {
                 currentSession = msg.session;
+                loadMemory(currentSession);
             }
 
             // Streaming tokens
@@ -26,9 +27,14 @@ function connectWebSocket() {
                 return;
             }
 
-            // Final reply (non-stream)
+            // Final reply
             if (msg.reply) {
                 window.renderAssistantMessage(msg.reply);
+
+                // Only reload memory if session ID is valid
+                if (currentSession && currentSession !== "undefined") {
+                    loadMemory(currentSession);
+                }
             }
 
             // Reasoning panel
@@ -36,10 +42,11 @@ function connectWebSocket() {
                 window.updateReasoningPanel(msg.reasoning);
             }
 
-            // Decision result (tool vs respond)
+            // Tool decisions
             if (msg.decision_result) {
                 window.logToolDecision(msg.decision_result);
             }
+
         } catch (e) {
             console.error("WS message error:", e, event.data);
         }

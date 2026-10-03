@@ -148,3 +148,57 @@ document.addEventListener("DOMContentLoaded", () => {
     loadConfigAndModels();
     loadSystemInfo();
 });
+
+
+function loadMemory(sessionId) {
+    fetch(`/api/memory/${sessionId}`)
+        .then(r => r.json())
+        .then(data => {
+            const el = document.getElementById("memory-summary");
+            if (!el) return;
+
+            const mem = data.memory;
+            if (!mem) {
+                el.textContent = "No stored memory.";
+                return;
+            }
+
+            const lines = [];
+
+            if (mem.name) {
+                lines.push(`• Name: ${mem.name}`);
+            }
+
+            for (const fact of mem.facts || []) {
+                lines.push(`• ${fact}`);
+            }
+
+            if (lines.length === 0) {
+                el.textContent = "No stored memory.";
+            } else {
+                el.textContent = lines.join("\n");
+            }
+        })
+        .catch(() => {
+            const el = document.getElementById("memory-summary");
+            if (el) el.textContent = "Memory unavailable.";
+        });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    loadConfigAndModels();
+    loadSystemInfo();
+    loadMemory();
+});
+
+window.updateMemorySummary = function (memory) {
+    const el = document.getElementById("memory-summary");
+    if (!el) return;
+
+    if (!memory || memory.length === 0) {
+        el.textContent = "No stored memory.";
+        return;
+    }
+
+    el.textContent = memory.map(item => `• ${item}`).join("\n");
+};
