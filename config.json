@@ -1,0 +1,90 @@
+{
+  "ollama": {
+    "url": "http://192.168.1.205:11434",
+    "model": "llama3.2",
+    "mode": "generate",
+    "embedding_model": "nomic-embed-text"
+  },
+
+  "reasoning": {
+    "model": "llama3.2"
+  },
+
+  "personalities": {
+    "default": "prompts/default.txt",
+    "teacher": "prompts/teacher.txt",
+    "concise": "prompts/concise.txt",
+    "developer": "prompts/developer.txt",
+    "playful": "prompts/playful.txt"
+  },
+
+  "model_personality_map": {
+    "llama3.2": "developer",
+    "phi3:medium": "teacher",
+    "qwen2.5:7b": "concise",
+    "mistral:7b": "default"
+  },
+
+  "rag": {
+    "enabled": true,
+    "url": "http://192.168.1.205:8001/rag"
+  },
+
+  "tools": {
+    "enabled": true,
+    "list": ["duckduckgo_search"],
+    "search_engine": "duckduckgo"
+  },
+
+  "mcp": {
+    "server_cmd": [
+      "C:/HOME_Scripts/Luminesce/venv/Scripts/python.exe",
+      "-m",
+      "lumin.mcp.mcp_server"
+    ],
+    "cwd": "C:/HOME_Scripts/Luminesce"
+  },
+
+  "voice": {
+    "mic_device": 1,
+    "vosk_model_path": "C:\\HOME_Scripts\\Luminesce\\lumin\\models\\vosk\\vosk-model-small-en-us-0.15",
+    "silence_threshold": 2000,
+    "silence_duration": 1.5,
+    "listen_mode": "push_to_talk",
+    "tts_enabled": true,
+    "wake_words": ["hey lumin", "lumin"],
+    "stop_words": ["stop", "cancel"],
+    "clear_words": ["clear that", "reset"],
+    "listen_again_words": ["listen again", "start over"]
+  },
+
+  "tts": {
+    "enabled": false,
+    "engine": "piper",
+    "piper_path": "C:/HOME_Scripts/Luminesce/piper/piper.exe",
+    "model_path": "models/en_US-ryan-low.onnx",
+    "voice": "en_US-ryan-low"
+  },
+
+  "ui": {
+    "tui": {
+      "stream_to_terminal": true,
+      "theme": "dark",
+      "animations": true,
+      "mode": "auto",
+      "width": "auto"
+    },
+    "web": {
+      "theme": "dark",
+      "animations": true,
+      "default_model": "llama3.2",
+      "show_reasoning_panel": true
+    }
+  },
+
+  "api": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 8000
+  }
+}
