@@ -11,40 +11,39 @@ function connectWebSocket() {
 
     ws.onmessage = (event) => {
         try {
-            const msg = JSON.parse(event.data);
+            const parts = event.data.split(/(?<=})\s*(?={)/g);
 
-            // Store session + load memory immediately
-            if (msg.session) {
-                currentSession = msg.session;
-                loadMemory(currentSession);
-            }
+            for (const p of parts) {
+                try {
+                    const msg = JSON.parse(p);
 
-            // Streaming tokens
-            if (msg.stream === true) {
-                if (msg.reply) {
-                    window.renderAssistantStream(msg.reply);
+                    // Session ID
+                    if (msg.session) {
+                        currentSession = msg.session;
+                        loadMemory(currentSession);
+                    }
+
+                    // Streaming tokens
+                    if (msg.stream === true) {
+                        if (msg.reply) window.renderAssistantStream(msg.reply);
+                        continue;
+                    }
+
+                    // Final reply
+                    if (msg.reply) {
+                        window.renderAssistantMessage(msg.reply);
+                        if (currentSession) loadMemory(currentSession);
+                    }
+
+                    // Reasoning panel
+                    if (msg.reasoning) window.updateReasoningPanel(msg.reasoning);
+
+                    // Tool decisions
+                    if (msg.decision_result) window.logToolDecision(msg.decision_result);
+
+                } catch (e) {
+                    console.error("WS parse error:", e, p);
                 }
-                return;
-            }
-
-            // Final reply
-            if (msg.reply) {
-                window.renderAssistantMessage(msg.reply);
-
-                // Only reload memory if session ID is valid
-                if (currentSession && currentSession !== "undefined") {
-                    loadMemory(currentSession);
-                }
-            }
-
-            // Reasoning panel
-            if (msg.reasoning) {
-                window.updateReasoningPanel(msg.reasoning);
-            }
-
-            // Tool decisions
-            if (msg.decision_result) {
-                window.logToolDecision(msg.decision_result);
             }
 
         } catch (e) {

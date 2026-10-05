@@ -72,14 +72,6 @@
                     onchange="setPersonality()"></select>
         </div>
 
-        <!-- Memory quick view -->
-        <div>
-            <h2 class="font-semibold mb-2">Memory</h2>
-            <div id="memory-summary" class="text-sm text-gray-700">
-                Loading…
-            </div>
-        </div>
-
         <!-- Actions -->
         <div class="mt-auto flex flex-col gap-2">
             <button onclick="clearChat()"
@@ -195,6 +187,9 @@ function setModel() {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({model})
+    }).then(() => {
+        refreshSystemInfo();   // <—— ADD THIS LINE
+        refreshSemanticStatus(); // optional but smart
     });
 }
 

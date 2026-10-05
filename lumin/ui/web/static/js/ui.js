@@ -202,3 +202,53 @@ window.updateMemorySummary = function (memory) {
 
     el.textContent = memory.map(item => `• ${item}`).join("\n");
 };
+
+async function refreshSemanticStatus() {
+    try {
+        const res = await fetch("/api/semantic-status");
+        const data = await res.json();
+
+        const panel = document.getElementById("semantic-panel");
+        if (!panel) return;
+
+        if (!data.active) {
+            panel.textContent =
+                "Semantic Memory: INACTIVE\n" +
+                (data.reason ? `Reason: ${data.reason}\n` : "") +
+                (data.model ? `Embedding Model: ${data.model}\n` : "");
+        } else {
+            panel.textContent =
+                "Semantic Memory: ACTIVE\n" +
+                `Embedding Model: ${data.model}\n` +
+                `Stored Items: ${data.stored_items}\n`;
+        }
+    } catch (e) {
+        const panel = document.getElementById("semantic-panel");
+        if (panel) {
+            panel.textContent =
+                "Semantic Memory: UNKNOWN\nError contacting /api/semantic-status.";
+        }
+    }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    refreshSemanticStatus();
+});
+
+async function refreshSystemInfo() {
+    try {
+        const res = await fetch("/api/model-info");
+        const data = await res.json();
+
+        const panel = document.getElementById("system-panel");
+        if (!panel) return;
+
+        panel.textContent = JSON.stringify(data, null, 2);
+    } catch (e) {
+        const panel = document.getElementById("system-panel");
+        if (panel) {
+            panel.textContent = "Error fetching system info.";
+        }
+    }
+}
+

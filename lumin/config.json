@@ -2,7 +2,8 @@
   "ollama": {
     "url": "http://192.168.1.205:11434",
     "model": "llama3.2",
-    "mode": "generate"
+    "mode": "generate",
+    "embedding_model": "nomic-embed-text"
   },
 
   "reasoning": {
