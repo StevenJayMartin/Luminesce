@@ -104,6 +104,8 @@
                     class="px-6 py-3 bg-blue-600 text-white rounded hover:bg-blue-700">
                 Send
             </button>
+            <button onclick="openFilePicker()">Upload File</button>
+            <input type="file" id="file-input" class="hidden" onchange="uploadSelectedFile()" />
         </div>
     </main>
 
@@ -201,6 +203,36 @@ function setPersonality() {
         body: JSON.stringify({personality})
     });
 }
+
+function openFilePicker() {
+    document.getElementById("file-input").click();
+}
+
+async function uploadSelectedFile() {
+    const fileInput = document.getElementById("file-input");
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData
+    });
+
+    const data = await res.json();
+
+    const chat = document.getElementById("chat-window");
+    const bubble = document.createElement("div");
+    bubble.className = "bubble-assistant";
+    bubble.textContent = data.reply;
+    chat.appendChild(bubble);
+    chat.scrollTop = chat.scrollHeight;
+
+    fileInput.value = "";
+}
+
 </script>
 
 </body>

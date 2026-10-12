@@ -93,6 +93,23 @@ Rules:
 - Produce concise values.
 """
 
+MEMORY_CLASSIFIER_PROMPT = """
+You are a memory classifier for a local AI assistant.
+
+Classify the user's message into one of:
+- "user_profile"  (identity facts: name, location, role)
+- "preference"    (likes, dislikes, habits)
+- "project"       (information about ongoing work or creative projects)
+- "observation"   (general conversation, greetings, questions, small talk)
+
+Respond ONLY with JSON:
+{
+  "type": "user_profile | preference | project | observation",
+  "key": "short_key_or_null",
+  "value": "short_value_or_original_text"
+}
+"""
+
 # ------------------------------------------------------------
 # PERSONALITIES / RAG
 # ------------------------------------------------------------
@@ -183,10 +200,18 @@ def prune_embed_memory(mem):
 
 embed_memory = load_embed_memory()  # { session_id: [ { "text": str, "embedding": [float], "ts": int } ] }
 
+PROJECT_MEMORY_FILE = "project_memory.json"
 
-def init_session_memory(session_id: str):
-    if session_id not in embed_memory:
-        embed_memory[session_id] = []
+def load_project_memory():
+    if not os.path.exists(PROJECT_MEMORY_FILE):
+        return {"projects": {}, "current_project": None}
+    with open(PROJECT_MEMORY_FILE, "r") as f:
+        return json.load(f)
+
+def save_project_memory(pm):
+    with open(PROJECT_MEMORY_FILE, "w") as f:
+        json.dump(pm, f, indent=2)
+
 
 # ------------------------------------------------------------
 # FASTAPI APP
@@ -212,7 +237,6 @@ if os.path.isdir(STATIC_PATH):
 def root():
     return FileResponse(INDEX_PATH)
 
-
 @app.get("/config")
 def get_config():
     return {
@@ -223,7 +247,6 @@ def get_config():
         },
         "ui": config.get("ui", {}).get("web", {}),
     }
-
 
 @app.get("/api/personalities")
 def list_personalities():
@@ -243,7 +266,6 @@ def list_personalities():
         "current_personality": current_personality,
         "model_personality_map": model_map,
     }
-
 
 @app.post("/api/set-personality")
 async def set_personality(req: dict):
@@ -269,7 +291,6 @@ async def set_personality(req: dict):
 
     return {"ok": True, "model": model_name, "personality": personality_name}
 
-
 @app.get("/api/models")
 def list_models():
     try:
@@ -280,7 +301,6 @@ def list_models():
     except Exception as e:
         print("ERROR in /api/models:", e)
         return {"models": [], "error": str(e)}
-
 
 @app.get("/api/model-info")
 def model_info():
@@ -319,7 +339,6 @@ def model_info():
 
     return info
 
-
 @app.post("/api/set-model")
 async def set_model(req: dict):
     new_model = req.get("model")
@@ -336,7 +355,6 @@ async def set_model(req: dict):
         return {"ok": False, "error": str(e)}
 
     return {"ok": True, "model": new_model}
-
 
 @app.get("/api/memory")
 def get_memory():
@@ -360,12 +378,53 @@ def get_memory_for_session(session_id: str):
         return {"memory": [], "error": "Unknown session or no semantic memory"}
     return {"memory": mem}
 
+@app.get("/api/project-memory")
+def get_project_memory():
+    return load_project_memory()
+
+@app.post("/api/set-project")
+def set_project(payload: dict):
+    name = payload.get("name")
+    if not name:
+        return {"ok": False, "error": "Missing project name"}
+
+    pm = load_project_memory()
+    pm["current_project"] = name
+    pm["projects"].setdefault(name, {
+        "topics": [],
+        "characters": [],
+        "lore": [],
+        "notes": []
+    })
+    save_project_memory(pm)
+    return {"ok": True, "project": pm["projects"][name]}
+
+@app.post("/api/project-note")
+def add_project_note(payload: dict):
+    text = payload.get("text")
+    if not text:
+        return {"ok": False, "error": "Missing text"}
+
+    pm = load_project_memory()
+    name = pm.get("current_project")
+    if not name:
+        return {"ok": False, "error": "No current project set"}
+
+    proj = pm["projects"].setdefault(name, {
+        "topics": [],
+        "characters": [],
+        "lore": [],
+        "notes": []
+    })
+    proj["notes"].append(text)
+    save_project_memory(pm)
+    return {"ok": True}
+
 # ------------------------------------------------------------
 # UPLOAD + GENERATE (non-stream)
 # ------------------------------------------------------------
 
 conversations = {}
-
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
@@ -417,7 +476,6 @@ async def upload_file(file: UploadFile = File(...)):
                 f"I stored its metadata in the conversation so you can still ask me about it."
             )
         }
-
 
 @app.post("/api/generate")
 async def generate(req: dict):
@@ -483,7 +541,6 @@ def tolerant_json_extract(raw: str) -> dict | None:
     except Exception:
         return None
 
-
 def sanitize_reasoning(parsed: dict, user_message: str) -> dict:
     thought = parsed.get("thought", "").strip()
     intent = parsed.get("intent", "").strip() or "none"
@@ -513,7 +570,6 @@ def sanitize_reasoning(parsed: dict, user_message: str) -> dict:
         "plan": plan,
         "decision": decision,
     }
-
 
 def run_reasoning_module(user_message: str) -> dict:
     try:
@@ -564,6 +620,21 @@ def run_reasoning_module(user_message: str) -> dict:
         "decision": "none",
     }
 
+def classify_memory(text: str) -> dict | None:
+    try:
+        payload = {
+            "model": config["ollama"]["model"],
+            "prompt": MEMORY_CLASSIFIER_PROMPT + "\nUser: " + text + "\nJSON:",
+            "stream": False,
+        }
+        r = requests.post(f"{config['ollama']['url']}/api/generate", json=payload)
+        raw = r.json().get("response", "").strip()
+        parsed = tolerant_json_extract(raw)
+        return parsed
+    except Exception as e:
+        print("Memory classifier error:", e)
+        return None
+
 
 def route_decision(reasoning: dict, user_message: str):
     decision = reasoning.get("decision", "none")
@@ -572,7 +643,6 @@ def route_decision(reasoning: dict, user_message: str):
     if decision == "call_tool":
         return "call_tool"
     return "respond"
-
 
 async def execute_tool(name, args):
     import inspect
@@ -611,8 +681,79 @@ async def continue_llm_with_tool_results(tool_name, results):
         return "Error contacting model."
 
 # ------------------------------------------------------------
-# EMBEDDINGS HELPERS
+# MEMORY MANAGER - EMBEDDINGS HELPERS
 # ------------------------------------------------------------
+
+class MemoryManager:
+    def __init__(self, embed_mem: dict):
+        self.embed_mem = embed_mem
+
+    def init_session(self, session_id: str):
+        if session_id not in self.embed_mem:
+            self.embed_mem[session_id] = []
+
+    def add_item(
+        self,
+        session_id: str,
+        *,
+        type: str,
+        key: str | None,
+        value: str,
+        text: str,
+        importance: float = 0.5,
+    ):
+        emb = get_embedding(value)
+        if emb is None:
+            return
+
+        item = {
+            "id": str(uuid.uuid4()),
+            "type": type,
+            "key": key,
+            "value": value,
+            "text": text,
+            "embedding": emb,
+            "importance": importance,
+            "ts": int(time.time()),
+        }
+
+        self.embed_mem.setdefault(session_id, []).append(item)
+        self.embed_mem = prune_embed_memory(self.embed_mem)
+        save_embed_memory(self.embed_mem)
+
+    def recall(
+        self,
+        session_id: str,
+        query: str,
+        *,
+        type: str | None = None,
+        key: str | None = None,
+        top_k: int = 5,
+    ):
+        emb_q = get_embedding(query)
+        if emb_q is None:
+            return []
+
+        items = self.embed_mem.get(session_id, [])
+        scored = []
+        for item in items:
+            if type and item.get("type") != type:
+                continue
+            if key and item.get("key") != key:
+                continue
+
+            emb = item.get("embedding")
+            if not emb:
+                continue
+
+            score = cosine(emb_q, emb) * (1.0 + item.get("importance", 0.0))
+            scored.append((score, item))
+
+        scored.sort(reverse=True)
+        return [it for _, it in scored[:top_k]]
+
+
+memory_manager = MemoryManager(embed_memory)
 
 def get_embedding(text: str) -> list | None:
     try:
@@ -663,22 +804,32 @@ def cosine(a, b):
         math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b)) + 1e-8
     )
 
+def build_memory_context(session_id: str) -> str:
+    items = memory_manager.recall(
+        session_id,
+        query="user info",
+        top_k=10,
+    )
 
-def semantic_recall(session_id: str, query: str, top_k: int = 5):
-    emb_q = get_embedding(query)
-    if emb_q is None:
-        return []
+    if not items:
+        return ""
 
-    items = embed_memory.get(session_id, [])
-    scored = []
+    lines = ["Memory:"]
     for item in items:
-        emb = item.get("embedding")
-        if not emb:
-            continue
-        scored.append((cosine(emb_q, emb), item["text"]))
+        t = item.get("type")
+        k = item.get("key")
+        v = item.get("value")
+        if t == "user_profile" and k:
+            lines.append(f"- {k}: {v}")
+        elif t == "preference" and k:
+            lines.append(f"- prefers {k}: {v}")
+        elif t == "project" and k:
+            lines.append(f"- project {k}: {v}")
+        else:
+            lines.append(f"- {item.get('text')}")
 
-    scored.sort(reverse=True)
-    return [t for _, t in scored[:top_k]]
+    return "\n".join(lines) + "\n\n"
+
 
 # ------------------------------------------------------------
 # CHAT WEBSOCKET (streaming, semantic memory only)
@@ -690,7 +841,6 @@ async def chat_ws(ws: WebSocket):
 
     session_id = str(uuid.uuid4())
     conversations[session_id] = []
-    init_session_memory(session_id)
 
     model_name = config["ollama"]["model"]
     personality_prompt = load_personality_prompt(model_name)
@@ -727,64 +877,63 @@ async def chat_ws(ws: WebSocket):
         while True:
             data = await ws.receive_json()
             text = data.get("text", "").strip()
-
-            # ------------------------------------------------------------
-            # SEMANTIC MEMORY — ALWAYS STORE USER MESSAGE
-            # ------------------------------------------------------------
-            emb = get_embedding(text)
-            if emb is not None:
-                embed_memory[session_id].append({
-                    "text": text,
-                    "embedding": emb,
-                    "ts": int(time.time())
-                })
-                embed_memory = prune_embed_memory(embed_memory)
-                save_embed_memory(embed_memory)
-
-            # ------------------------------------------------------------
-            # SPECIAL HANDLERS
-            # ------------------------------------------------------------
-
-            # Store name semantically
-            if text.lower().startswith("my name is"):
-                name = text.split("is", 1)[1].strip()
-
-                emb_name = get_embedding(name)
-                if emb_name is not None:
-                    embed_memory[session_id].append({
-                        "text": name,
-                        "embedding": emb_name,
-                        "ts": int(time.time())
-                    })
-                    embed_memory = prune_embed_memory(embed_memory)
-                    save_embed_memory(embed_memory)
-
-                reply = f"Nice to meet you, {name}. I’ll remember that."
-                conversations[session_id].append({"role": "user", "content": text})
-                conversations[session_id].append({"role": "assistant", "content": reply})
-
-                await ws.send_json({
-                    "session": session_id,
-                    "reply": reply,
-                    "reasoning": {
-                        "thought": f"Stored name semantically: {name}",
-                        "intent": "store_name_semantic",
-                        "plan": ["Save name embedding"],
-                        "decision": "memory_update",
-                    },
-                    "decision_result": None,
-                    "stream": False,
-                })
+            if not text:
                 continue
 
-            # Recall name semantically
+            # ------------------------------------------------------------
+            # STRUCTURED MEMORY WRITE (minimal)
+            # ------------------------------------------------------------
+            memory_manager.init_session(session_id)
+
+            classified = classify_memory(text)
+            if classified:
+                m_type = classified.get("type", "observation")
+                m_key = classified.get("key")
+                m_value = classified.get("value") or text
+
+                importance_map = {
+                    "user_profile": 0.9,
+                    "preference": 0.7,
+                    "project": 0.7,
+                    "observation": 0.2,
+                }
+                importance = importance_map.get(m_type, 0.2)
+
+                memory_manager.add_item(
+                    session_id,
+                    type=m_type,
+                    key=m_key,
+                    value=m_value,
+                    text=text,
+                    importance=importance,
+                )
+            else:
+                memory_manager.add_item(
+                    session_id,
+                    type="observation",
+                    key=None,
+                    value=text,
+                    text=text,
+                    importance=0.1,
+                )
+
+            # ------------------------------------------------------------
+            # NAME RECALL (minimal)
+            # ------------------------------------------------------------
             if "what is my name" in text.lower():
                 conversations[session_id].append({"role": "user", "content": text})
 
-                recalled = semantic_recall(session_id, "my name", top_k=1)
+                recalled = memory_manager.recall(
+                    session_id,
+                    query="user name",
+                    type="user_profile",
+                    key="name",
+                    top_k=1,
+                )
+
                 if recalled:
-                    name_text = recalled[0].strip()
-                    reply = f"Your name is {name_text}."
+                    name_value = recalled[0].get("value", "").strip()
+                    reply = f"Your name is {name_value}."
                 else:
                     reply = (
                         "I’m not confident I know your name yet. "
@@ -797,63 +946,8 @@ async def chat_ws(ws: WebSocket):
                     "session": session_id,
                     "reply": reply,
                     "reasoning": {
-                        "thought": "Recalled name semantically",
-                        "intent": "recall_name_semantic",
-                        "plan": [],
-                        "decision": "memory_read",
-                    },
-                    "decision_result": None,
-                    "stream": False,
-                })
-                continue
-
-            # Forget Everything — wipe semantic memory + conversation
-            if text.lower().strip() == "forget everything":
-                embed_memory = {}  # wipe all semantic memory
-                save_embed_memory(embed_memory)
-
-                conversations[session_id] = []  # clear chat history
-
-                reply = "All memory has been cleared."
-                await ws.send_json({
-                    "session": session_id,
-                    "reply": reply,
-                    "reasoning": {
-                        "thought": "Semantic memory and conversation cleared",
-                        "intent": "memory_reset",
-                        "plan": ["Clear embed_memory.json", "Clear conversation"],
-                        "decision": "memory_update",
-                    },
-                    "decision_result": None,
-                    "stream": False,
-                })
-                continue
-
-            # General semantic recall
-            if "what do you remember" in text.lower():
-                conversations[session_id].append({"role": "user", "content": text})
-
-                semantic_items = semantic_recall(session_id, "user info", top_k=5)
-                reply_lines = ["Here’s what I remember about you:"]
-
-                if semantic_items:
-                    for f in semantic_items:
-                        reply_lines.append(f"- {f}")
-                else:
-                    reply_lines.append(
-                        "- I don’t have anything stored yet. "
-                        "You can start by saying: 'My name is ...'."
-                    )
-
-                reply = "\n".join(reply_lines)
-                conversations[session_id].append({"role": "assistant", "content": reply})
-
-                await ws.send_json({
-                    "session": session_id,
-                    "reply": reply,
-                    "reasoning": {
-                        "thought": "Listed semantic memory",
-                        "intent": "recall_semantic_memory",
+                        "thought": "Recalled name from structured memory",
+                        "intent": "recall_name_structured",
                         "plan": [],
                         "decision": "memory_read",
                     },
@@ -863,48 +957,25 @@ async def chat_ws(ws: WebSocket):
                 continue
 
             # ------------------------------------------------------------
-            # REASONING + TOOL ROUTING
+            # NORMAL CHAT PATH WITH MEMORY CONTEXT
             # ------------------------------------------------------------
             conversations[session_id].append({"role": "user", "content": text})
 
-            reasoning = run_reasoning_module(text)
-            decision = route_decision(reasoning, text)
+            memory_context = build_memory_context(session_id)
 
-            if decision == "call_tool":
-                intent_json = reasoning
-                tool_name, tool_args = route_intent(intent_json, text)
-
-                results = await execute_tool(tool_name, tool_args)
-                reply = await continue_llm_with_tool_results(tool_name, results)
-                clean_reply = sanitize_reply(reply)
-
-                conversations[session_id].append({"role": "assistant", "content": clean_reply})
-
-                await ws.send_json({
-                    "session": session_id,
-                    "reply": clean_reply,
-                    "reasoning": reasoning,
-                    "decision_result": results,
-                    "stream": False,
-                })
-                continue
-
-            # ------------------------------------------------------------
-            # NORMAL CHAT PATH
-            # ------------------------------------------------------------
-            augmented_prompt = call_rag_server_safe(text, session_id)
-            if augmented_prompt:
-                prompt_to_llm = augmented_prompt
-            else:
-                transcript = personality_prompt.strip() + "\n\nConversation:\n"
-                for m in conversations[session_id][-8:]:
-                    transcript += f"{m['role'].capitalize()}: {m['content']}\n"
-                transcript += "Assistant:"
-                prompt_to_llm = transcript
+            transcript = (
+                personality_prompt.strip()
+                + "\n\n"
+                + memory_context
+                + "Conversation:\n"
+            )
+            for m in conversations[session_id][-8:]:
+                transcript += f"{m['role'].capitalize()}: {m['content']}\n"
+            transcript += "Assistant:"
 
             payload = {
                 "model": model_name,
-                "prompt": prompt_to_llm,
+                "prompt": transcript,
                 "stream": True,
             }
 
@@ -946,7 +1017,7 @@ async def chat_ws(ws: WebSocket):
                 await ws.send_json({
                     "session": session_id,
                     "reply": "",
-                    "reasoning": reasoning,
+                    "reasoning": None,
                     "decision_result": None,
                     "stream": False,
                 })
