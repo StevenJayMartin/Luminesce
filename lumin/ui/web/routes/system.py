@@ -69,8 +69,21 @@ def model_info(config: dict = Depends(get_config)):
 # /api/semantic-status
 # ------------------------------------------------------------
 @router.get("/api/semantic-status")
-def semantic_status():
-    return {"active": True}
+def semantic_status(
+    config: dict = Depends(get_config),
+    semantic_memory = Depends(get_memory_engine)
+):
+    # Count total stored items across all sessions
+    total_items = sum(len(items) for items in semantic_memory.mem.values())
+
+    return {
+        "active": True,
+        "embedding_model": config["ollama"].get(
+            "embedding_model",
+            config["ollama"]["model"]
+        ),
+        "stored_items": total_items,
+    }
 
 # ------------------------------------------------------------
 # /api/memory/{session_id}

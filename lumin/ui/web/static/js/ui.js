@@ -215,11 +215,11 @@ async function refreshSemanticStatus() {
             panel.textContent =
                 "Semantic Memory: INACTIVE\n" +
                 (data.reason ? `Reason: ${data.reason}\n` : "") +
-                (data.model ? `Embedding Model: ${data.model}\n` : "");
+                (data.model ? `Embedding Model: ${data.embedding_model}\n` : "");
         } else {
             panel.textContent =
                 "Semantic Memory: ACTIVE\n" +
-                `Embedding Model: ${data.model}\n` +
+                `Embedding Model: ${data.embedding_model}\n` +
                 `Stored Items: ${data.stored_items}\n`;
         }
     } catch (e) {
