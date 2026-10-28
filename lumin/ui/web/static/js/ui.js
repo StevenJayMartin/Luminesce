@@ -35,6 +35,9 @@ window.renderAssistantMessage = function (text) {
     row.appendChild(bubble);
     chat.appendChild(row);
     chat.scrollTop = chat.scrollHeight;
+
+    // TTS stub call
+    if (window.speakText) window.speakText(text);
 };
 
 // Streaming: append to last assistant bubble
