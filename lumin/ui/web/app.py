@@ -54,6 +54,20 @@ app.dependency_overrides[system_deps.get_memory_engine] = lambda: semantic_memor
 # ------------------------------------------------------------
 # Routes
 # ------------------------------------------------------------
+current_model = "llama3:latest"
+
+@app.post("/api/set-model")
+async def set_model(req: dict):
+    global current_model
+
+    new_model = req.get("model")
+    if not new_model:
+        return {"ok": False, "error": "No model provided"}
+
+    current_model = new_model
+    return {"ok": True, "model": current_model}
+
+
 @app.get("/")
 def root():
     return FileResponse(paths["index"])
