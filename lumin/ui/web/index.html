@@ -152,7 +152,7 @@
 <script src="/static/js/websocket.js"></script>
 <script src="/static/js/ui.js"></script>
 <script src="/static/js/tools.js"></script>
-script src="/static/js/rag.js"></script>
+<script src="/static/js/rag.js"></script>
 <script src="/static/js/mcp.js"></script>
 
 <script>
@@ -234,7 +234,11 @@ function speakChatInput() {
 }
 </script>
 
-<!-- Import TTS module -->
+<script type="module">
+    import * as ort from "/static/onnx/ort.min.mjs";
+    window.ort = ort;
+</script>
+
 <script type="module">
     import { speakText } from "/static/tts/tts.js";
     window.speakText = speakText;

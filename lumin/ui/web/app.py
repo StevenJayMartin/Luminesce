@@ -92,32 +92,3 @@ app.include_router(system_router)
 @app.websocket("/ws/chat")
 async def ws_chat_endpoint(ws: WebSocket):
     await chat_ws(ws, config=config, paths=paths, semantic_memory=semantic_memory)
-
-# ------------------------------------------------------------
-# TTS Endpoint (MeloTTS ONNX)
-# ------------------------------------------------------------
-import numpy as np
-
-# Load ONNX model once at startup
-tts_session = ort.InferenceSession(
-    os.path.join(paths["static"], "onnx", "model.onnx"),
-    providers=["CPUExecutionProvider"]
-)
-
-@app.post("/api/tts")
-async def tts(req: dict):
-    text = req.get("text", "").strip()
-    if not text:
-        return {"ok": False, "error": "No text provided"}
-
-    # TODO: Replace with real tokenizer
-    # For now: dummy single token
-    ids = np.array([[1]], dtype=np.int64)
-
-    # Run ONNX model
-    out = tts_session.run(None, {"input_ids": ids})[0]
-
-    # Flatten PCM float32 audio
-    pcm = out.flatten().tolist()
-
-    return {"ok": True, "pcm": pcm}
