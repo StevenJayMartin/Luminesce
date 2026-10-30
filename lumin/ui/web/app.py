@@ -97,7 +97,6 @@ async def ws_chat_endpoint(ws: WebSocket):
 # TTS Endpoint (MeloTTS ONNX)
 # ------------------------------------------------------------
 import numpy as np
-import onnxruntime as ort
 
 # Load ONNX model once at startup
 tts_session = ort.InferenceSession(
