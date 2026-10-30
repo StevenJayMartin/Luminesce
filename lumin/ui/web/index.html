@@ -4,19 +4,18 @@
     <meta charset="UTF-8" />
     <title>Luminesce — Assistant</title>
 
-    <!-- Tailwind CDN (MIT License, free) -->
+    <!-- Tailwind CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
 
-    <!-- Your existing CSS -->
+    <!-- CSS -->
     <link rel="stylesheet" href="/static/css/base.css" />
     <link rel="stylesheet" href="/static/css/theme.css" />
 
-    <!-- Icons -->
     <link rel="icon" href="/static/favicon.ico" />
 
     <style>
         .bubble-user {
-            background: #2563eb; /* blue-600 */
+            background: #2563eb;
             color: #ffffff;
             padding: 0.5rem 1rem;
             border-radius: 0.75rem;
@@ -25,8 +24,8 @@
             white-space: pre-wrap;
         }
         .bubble-assistant {
-            background: #e5e7eb; /* gray-200 */
-            color: #111827;      /* gray-900 */
+            background: #e5e7eb;
+            color: #111827;
             padding: 0.5rem 1rem;
             border-radius: 0.75rem;
             max-width: 40rem;
@@ -37,7 +36,6 @@
             display: none;
         }
     </style>
-
 </head>
 
 <body class="h-full bg-gray-100 text-gray-900">
@@ -47,7 +45,6 @@
     <aside class="w-64 bg-white border-r border-gray-300 p-4 flex flex-col gap-6">
         <h1 class="text-2xl font-bold">Luminesce</h1>
 
-        <!-- Sessions -->
         <div>
             <h2 class="font-semibold mb-2">Sessions</h2>
             <div id="session-list" class="flex flex-col gap-2">
@@ -56,7 +53,6 @@
             </div>
         </div>
 
-        <!-- Model selector -->
         <div>
             <h2 class="font-semibold mb-2">Model</h2>
             <select id="model-select"
@@ -64,7 +60,6 @@
                     onchange="setModel()"></select>
         </div>
 
-        <!-- Personality selector -->
         <div>
             <h2 class="font-semibold mb-2">Personality</h2>
             <select id="personality-select"
@@ -72,7 +67,6 @@
                     onchange="setPersonality()"></select>
         </div>
 
-        <!-- Actions -->
         <div class="mt-auto flex flex-col gap-2">
             <button onclick="clearChat()"
                     class="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600">
@@ -89,12 +83,11 @@
     <!-- CENTER CHAT -->
     <main class="flex-1 flex flex-col">
 
-        <!-- Chat messages -->
         <div id="chat-window"
              class="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-hide">
         </div>
 
-        <!-- Input box -->
+        <!-- INPUT BOX -->
         <div class="p-4 bg-white border-t border-gray-300 flex gap-3">
             <textarea id="chat-input"
                       class="flex-1 p-3 border rounded resize-none h-20"
@@ -104,6 +97,13 @@
                     class="px-6 py-3 bg-blue-600 text-white rounded hover:bg-blue-700">
                 Send
             </button>
+
+            <!-- NEW: Speak Button -->
+            <button onclick="speakChatInput()"
+                    class="px-6 py-3 bg-green-600 text-white rounded hover:bg-green-700">
+                Speak
+            </button>
+
             <button onclick="openFilePicker()">Upload File</button>
             <input type="file" id="file-input" class="hidden" onchange="uploadSelectedFile()" />
         </div>
@@ -114,35 +114,30 @@
 
         <h2 class="text-xl font-bold mb-4">Assistant Brain</h2>
 
-        <!-- Reasoning -->
         <details class="mb-4">
             <summary class="cursor-pointer font-semibold">Reasoning</summary>
             <pre id="reasoning-panel"
                  class="bg-gray-100 p-3 rounded text-sm overflow-x-auto"></pre>
         </details>
 
-        <!-- Tool logs -->
         <details class="mb-4">
             <summary class="cursor-pointer font-semibold">Tool Calls</summary>
             <pre id="tool-panel"
                  class="bg-gray-100 p-3 rounded text-sm overflow-x-auto"></pre>
         </details>
 
-        <!-- RAG -->
         <details class="mb-4">
             <summary class="cursor-pointer font-semibold">RAG</summary>
             <pre id="rag-panel"
                  class="bg-gray-100 p-3 rounded text-sm overflow-x-auto"></pre>
         </details>
 
-        <!-- Semantic Memory -->
         <details class="mb-4">
             <summary class="cursor-pointer font-semibold">Semantic Memory</summary>
             <pre id="semantic-panel"
                  class="bg-gray-100 p-3 rounded text-sm overflow-x-auto"></pre>
         </details>
 
-        <!-- GPU / Model Info -->
         <details class="mb-4">
             <summary class="cursor-pointer font-semibold">System Info</summary>
             <pre id="system-panel"
@@ -153,16 +148,14 @@
 
 </div>
 
-<!-- Your existing JS modules -->
+<!-- JS MODULES -->
 <script src="/static/js/websocket.js"></script>
 <script src="/static/js/ui.js"></script>
 <script src="/static/js/tools.js"></script>
-<script src="/static/js/rag.js"></script>
+script src="/static/js/rag.js"></script>
 <script src="/static/js/mcp.js"></script>
 
 <script>
-/* Minimal glue code — your existing JS handles most logic */
-
 function sendMessage() {
     const input = document.getElementById("chat-input");
     const text = input.value.trim();
@@ -190,8 +183,8 @@ function setModel() {
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({model})
     }).then(() => {
-        refreshSystemInfo();   // <—— ADD THIS LINE
-        refreshSemanticStatus(); // optional but smart
+        refreshSystemInfo();
+        refreshSemanticStatus();
     });
 }
 
@@ -233,8 +226,15 @@ async function uploadSelectedFile() {
     fileInput.value = "";
 }
 
+/* NEW: Speak Chat Input */
+function speakChatInput() {
+    const text = document.getElementById("chat-input").value.trim();
+    if (!text) return;
+    window.speakText(text);
+}
 </script>
 
+<!-- Import TTS module -->
 <script type="module">
     import { speakText } from "/static/tts/tts.js";
     window.speakText = speakText;
