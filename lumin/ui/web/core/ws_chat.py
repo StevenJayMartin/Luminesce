@@ -36,10 +36,12 @@ async def chat_ws(
 
             model_name = state.current_model
 
+            personality_name = state.current_personality
+
             personality_prompt = load_personality_prompt(
                 config,
                 paths["prompts"],
-                model_name
+                personality_name
             )
 
             print(f"Using model: {model_name}")

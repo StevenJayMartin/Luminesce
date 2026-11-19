@@ -127,6 +127,22 @@ async def set_model(req: dict):
         "model": state.current_model
     }
 
+@app.post("/api/set-personality")
+async def set_personality(req: dict):
+
+    new_personality = req.get("personality")
+
+    if not new_personality:
+        return {"ok": False}
+
+    state.current_personality = new_personality
+
+    print(f"Personality changed to: {new_personality}")
+
+    return {
+        "ok": True,
+        "personality": new_personality
+    }
 
 @app.get("/")
 def root():
