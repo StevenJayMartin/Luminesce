@@ -1,5 +1,8 @@
 import os
 from fastapi import FastAPI, WebSocket
+from fastapi import UploadFile, File
+from faster_whisper import WhisperModel
+import tempfile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +14,11 @@ from lumin.ui.web.core.ws_chat import chat_ws
 # Import router + dependency placeholders
 from lumin.ui.web.routes.system import router as system_router
 from lumin.ui.web.routes import system as system_deps
+from lumin.voice.tts_onnx import OnnxTTS
 
+import lumin.ui.web.models.state as state
+
+tts_engine = OnnxTTS("lumin/models/onnx")
 # ------------------------------------------------------------
 # Load config + paths
 # ------------------------------------------------------------
@@ -39,6 +46,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+whisper_model = WhisperModel(
+    "base",
+    device="cpu",
+    compute_type="int8"
+)
+
+tts_engine = OnnxTTS("lumin/models/onnx")
+
 # ------------------------------------------------------------
 # Static files
 # ------------------------------------------------------------
@@ -54,18 +69,63 @@ app.dependency_overrides[system_deps.get_memory_engine] = lambda: semantic_memor
 # ------------------------------------------------------------
 # Routes
 # ------------------------------------------------------------
-current_model = "llama3:latest"
+@app.post("/api/transcribe")
+async def transcribe_audio(
+    file: UploadFile = File(...)
+):
+    print(f"Received audio: {file.filename}")
+
+    suffix = (
+        os.path.splitext(file.filename)[1]
+        or ".webm"
+    )
+
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=suffix
+    ) as tmp:
+
+        tmp.write(await file.read())
+        temp_path = tmp.name
+
+    try:
+
+        segments, info = whisper_model.transcribe(
+            temp_path,
+            beam_size=5
+        )
+
+        text = " ".join(
+            segment.text
+            for segment in segments
+        ).strip()
+
+
+        return {
+            "success": True,
+            "text": text
+        }
+
+    finally:
+
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 @app.post("/api/set-model")
 async def set_model(req: dict):
-    global current_model
-
     new_model = req.get("model")
+
     if not new_model:
         return {"ok": False, "error": "No model provided"}
 
-    current_model = new_model
-    return {"ok": True, "model": current_model}
+    state.current_model = new_model
+
+    print(f"Model changed to: {state.current_model}")
+
+    return {
+        "ok": True,
+        "model": state.current_model
+    }
 
 
 @app.get("/")
@@ -85,6 +145,27 @@ def get_config_route():
 
 # Register system routes
 app.include_router(system_router)
+
+from fastapi import Body
+from fastapi.responses import Response
+
+@app.post("/api/tts")
+async def tts(payload: dict = Body(...)):
+
+    text = payload.get("text", "").strip()
+
+    if not text:
+        return Response(
+            content=b"",
+            media_type="audio/wav"
+        )
+
+    wav = tts_engine.synthesize(text)
+
+    return Response(
+        content=wav,
+        media_type="audio/wav"
+    )
 
 # ------------------------------------------------------------
 # WebSocket

@@ -98,10 +98,15 @@
                 Send
             </button>
 
-            <!-- NEW: Speak Button -->
-            <button onclick="speakChatInput()"
-                    class="px-6 py-3 bg-green-600 text-white rounded hover:bg-green-700">
-                Speak
+            <button
+                    id="record-btn"
+                    onclick="toggleRecording()"
+                    class="px-6 py-3 bg-red-600 text-white rounded hover:bg-red-700">
+                Record
+            </button>
+
+            <button onclick="stopSpeech()">
+                Stop Speech
             </button>
 
             <button onclick="openFilePicker()">Upload File</button>
@@ -232,17 +237,10 @@ function speakChatInput() {
     if (!text) return;
     window.speakText(text);
 }
+
 </script>
 
-<script type="module">
-    import * as ort from "/static/onnx/ort.min.mjs";
-    window.ort = ort;
-</script>
-
-<script type="module">
-    import { speakText } from "/static/tts/tts.js";
-    window.speakText = speakText;
-</script>
+<script src="/static/js/speech.js"></script>
 
 </body>
 </html>

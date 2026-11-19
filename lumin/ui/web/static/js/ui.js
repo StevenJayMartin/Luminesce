@@ -21,42 +21,94 @@ window.renderUserMessage = function (text) {
     chat.scrollTop = chat.scrollHeight;
 };
 
+
 window.renderAssistantMessage = function (text) {
+
     const chat = $("chat-window");
     if (!chat) return;
 
     const row = document.createElement("div");
-    row.className = "flex justify-start mb-2";
+    row.className =
+        "flex justify-start mb-2 items-start gap-2";
 
     const bubble = document.createElement("div");
-    bubble.className = "bubble-assistant whitespace-pre-wrap";
+    bubble.className =
+        "bubble-assistant whitespace-pre-wrap";
     bubble.textContent = text;
 
+    const speaker = document.createElement("button");
+    speaker.className = "speaker-btn";
+    speaker.innerHTML = "🔊";
+    speaker.title = "Speak message";
+
+    speaker.addEventListener("click", () => {
+
+        console.log(
+            "speaker clicked:",
+            text
+        );
+
+        if (window.speakText) {
+            window.speakText(text);
+        }
+
+    });
+
     row.appendChild(bubble);
+    row.appendChild(speaker);
+
     chat.appendChild(row);
     chat.scrollTop = chat.scrollHeight;
-
-    // TTS stub call
-    if (window.speakText) window.speakText(text);
 };
 
-// Streaming: append to last assistant bubble
 window.renderAssistantStream = function (token) {
+
     const chat = $("chat-window");
     if (!chat) return;
 
     let lastRow = chat.lastElementChild;
+
     if (!lastRow || !lastRow.className.includes("justify-start")) {
-        // create new assistant row
+
         lastRow = document.createElement("div");
-        lastRow.className = "flex justify-start mb-2";
+        lastRow.className =
+            "flex justify-start mb-2 items-start gap-2";
+
         const bubble = document.createElement("div");
-        bubble.className = "bubble-assistant whitespace-pre-wrap";
+        bubble.className =
+            "bubble-assistant whitespace-pre-wrap";
         bubble.textContent = token;
+
+        const speaker = document.createElement("button");
+        speaker.className = "speaker-btn";
+        speaker.innerHTML = "🔊";
+        speaker.title = "Speak message";
+
+        speaker.addEventListener("click", () => {
+
+            console.log(
+                "speaker clicked:",
+                bubble.textContent
+            );
+
+            if (window.speakText) {
+                window.speakText(
+                    bubble.textContent
+                );
+            }
+
+        });
+
         lastRow.appendChild(bubble);
+        lastRow.appendChild(speaker);
+
         chat.appendChild(lastRow);
+
     } else {
-        const bubble = lastRow.firstElementChild;
+
+        const bubble =
+            lastRow.firstElementChild;
+
         bubble.textContent += token;
     }
 

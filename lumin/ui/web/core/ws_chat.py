@@ -6,7 +6,7 @@ from .personality import load_personality_prompt
 from .classifier import classify_memory
 from .reasoning import run_reasoning_module
 from .semantic_memory import LuminSemanticMemory
-from lumin.ui.web.models.state import conversations
+import lumin.ui.web.models.state as state
 
 async def chat_ws(
     ws: WebSocket,
@@ -17,11 +17,8 @@ async def chat_ws(
     await ws.accept()
 
     session_id = str(uuid.uuid4())
-    conversations[session_id] = []
+    state.conversations[session_id] = []
     semantic_memory.init_session(session_id)
-
-    model_name = config["ollama"]["model"]
-    personality_prompt = load_personality_prompt(config, paths["prompts"], model_name)
 
     await ws.send_json({
         "session": session_id,
@@ -36,6 +33,16 @@ async def chat_ws(
             text = data.get("text", "").strip()
             if not text:
                 continue
+
+            model_name = state.current_model
+
+            personality_prompt = load_personality_prompt(
+                config,
+                paths["prompts"],
+                model_name
+            )
+
+            print(f"Using model: {model_name}")
 
             classified = classify_memory(config, text)
             if classified:
@@ -56,7 +63,7 @@ async def chat_ws(
                 )
 
             if "what is my name" in text.lower():
-                conversations[session_id].append({"role": "user", "content": text})
+                state.conversations[session_id].append({"role": "user", "content": text})
                 recalled = semantic_memory.recall(
                     session_id,
                     query="user name",
@@ -68,7 +75,7 @@ async def chat_ws(
                     reply = f"Your name is {recalled[0]['value']}."
                 else:
                     reply = "I’m not confident I know your name yet."
-                conversations[session_id].append({"role": "assistant", "content": reply})
+                state.conversations[session_id].append({"role": "assistant", "content": reply})
                 await ws.send_json({
                     "session": session_id,
                     "reply": reply,
@@ -77,7 +84,7 @@ async def chat_ws(
                 })
                 continue
 
-            conversations[session_id].append({"role": "user", "content": text})
+            state.conversations[session_id].append({"role": "user", "content": text})
             memory_context = semantic_memory.build_context(session_id)
 
             transcript = (
@@ -86,7 +93,7 @@ async def chat_ws(
                 + memory_context
                 + "Conversation:\n"
             )
-            for m in conversations[session_id][-8:]:
+            for m in state.conversations[session_id][-8:]:
                 transcript += f"{m['role'].capitalize()}: {m['content']}\n"
             transcript += "Assistant:"
 
@@ -122,7 +129,7 @@ async def chat_ws(
                         "stream": True,
                     })
 
-                conversations[session_id].append({"role": "assistant", "content": full_reply})
+                state.conversations[session_id].append({"role": "assistant", "content": full_reply})
                 await ws.send_json({
                     "session": session_id,
                     "reply": "",
@@ -140,5 +147,5 @@ async def chat_ws(
     except WebSocketDisconnect:
         pass
     finally:
-        conversations.pop(session_id, None)
+        state.conversations.pop(session_id, None)
 
