@@ -188,8 +188,11 @@ class OnnxTTS:
             tone_ids.append(tone)
 
         return token_ids, tone_ids
-
+    
+    
     def _build_inputs(self, text):
+
+        print("BUILD INPUTS:", repr(text))
 
         token_sequence = []
         tone_sequence = []
@@ -197,6 +200,9 @@ class OnnxTTS:
         for word in text.lower().split():
 
             tokens, tones = self._word_to_sequence(word)
+            print(
+                f"{word:<20} {'OK' if tokens else 'MISSING'}"
+            )
 
             token_sequence.extend(tokens)
             tone_sequence.extend(tones)
@@ -233,6 +239,10 @@ class OnnxTTS:
     def synthesize(self, text: str) -> bytes:
 
         text = self._prepare_text(text)
+
+        if not text:
+            print("EMPTY AFTER PREPARE")
+            return b""
 
         x, tones = self._build_inputs(text)
         

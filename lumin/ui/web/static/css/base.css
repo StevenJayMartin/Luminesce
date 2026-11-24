@@ -127,6 +127,17 @@ body {
     transform: scale(1.1);
 }
 
+.bubble-assistant pre {
+    background: #1e1e1e;
+    color: #dcdcdc;
+    padding: 12px;
+    border-radius: 8px;
+    overflow-x: auto;
+}
+
+.bubble-assistant code {
+    font-family: monospace;
+}
 /* Animations */
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(6px); }

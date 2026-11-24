@@ -32,9 +32,10 @@ window.renderAssistantMessage = function (text) {
         "flex justify-start mb-2 items-start gap-2";
 
     const bubble = document.createElement("div");
-    bubble.className =
-        "bubble-assistant whitespace-pre-wrap";
-    bubble.textContent = text;
+    bubble.className = "bubble-assistant";
+
+    bubble.dataset.raw = text;
+    bubble.innerHTML = marked.parse(text);
 
     const speaker = document.createElement("button");
     speaker.className = "speaker-btn";
@@ -45,11 +46,13 @@ window.renderAssistantMessage = function (text) {
 
         console.log(
             "speaker clicked:",
-            text
+            bubble.textContent
         );
 
         if (window.speakText) {
-            window.speakText(text);
+            window.speakText(
+                bubble.textContent
+            );
         }
 
     });
@@ -60,6 +63,7 @@ window.renderAssistantMessage = function (text) {
     chat.appendChild(row);
     chat.scrollTop = chat.scrollHeight;
 };
+
 
 window.renderAssistantStream = function (token) {
 
@@ -75,9 +79,10 @@ window.renderAssistantStream = function (token) {
             "flex justify-start mb-2 items-start gap-2";
 
         const bubble = document.createElement("div");
-        bubble.className =
-            "bubble-assistant whitespace-pre-wrap";
-        bubble.textContent = token;
+        bubble.className = "bubble-assistant";
+
+        bubble.dataset.raw = token;
+        bubble.innerHTML = marked.parse(token);
 
         const speaker = document.createElement("button");
         speaker.className = "speaker-btn";
@@ -109,11 +114,17 @@ window.renderAssistantStream = function (token) {
         const bubble =
             lastRow.firstElementChild;
 
-        bubble.textContent += token;
+        bubble.dataset.raw =
+            (bubble.dataset.raw || "") + token;
+
+        bubble.innerHTML =
+            marked.parse(bubble.dataset.raw);
+
     }
 
     chat.scrollTop = chat.scrollHeight;
 };
+
 
 // Reasoning panel
 window.updateReasoningPanel = function (reasoning) {

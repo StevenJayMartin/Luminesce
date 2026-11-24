@@ -71,7 +71,7 @@ class LuminSemanticMemory:
                 continue
             score = self._cosine(emb_q, item["embedding"])
             scored.append((score, item))
-        scored.sort(reverse=True)
+        scored.sort(key=lambda x: x[0], reverse=True)
         return [it for _, it in scored[:top_k]]
 
     def build_context(self, sid: str) -> str:

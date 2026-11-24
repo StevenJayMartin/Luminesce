@@ -22,8 +22,11 @@ tts_engine = OnnxTTS("lumin/models/onnx")
 # ------------------------------------------------------------
 # Load config + paths
 # ------------------------------------------------------------
+
 config = load_config()
 paths = get_paths()
+
+state.current_model = config["ollama"]["model"]
 
 # ------------------------------------------------------------
 # Initialize semantic memory
