@@ -31,13 +31,14 @@
             background: #e5e7eb;
             color: #111827;
 
-            padding: 0.75rem 1rem;
+            padding: 1rem 1.25rem;
             border-radius: 0.75rem;
 
             width: 100%;
+            box-sizing: border-box;
 
             font-size: 0.95rem;
-            line-height: 1.5;
+            line-height: 1.6;
 
             word-wrap: break-word;
             overflow-wrap: break-word;
@@ -162,13 +163,24 @@
             </div>
         </div>
 
+        <div id="models-panel">
+
         <div>
-            <h2 class="font-semibold mb-2">Model</h2>
+            <strong>Active</strong><br>
+            <span id="active-model"></span>
+        </div>
+
+        <br>
+
+        <div>
+            <strong>Select</strong><br>
             <select id="model-select"
                     class="w-full p-2 border rounded"
                     onchange="setModel()"></select>
         </div>
 
+        </div>
+        
         <div>
             <h2 class="font-semibold mb-2">Personality</h2>
             <select id="personality-select"

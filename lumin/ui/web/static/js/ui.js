@@ -177,20 +177,50 @@ function loadConfigAndModels() {
                 // current model will be set after /api/models
             }
         });
+fetch("/api/models")
+    .then(r => r.json())
+    .then(data => {
 
-    fetch("/api/models")
-        .then(r => r.json())
-        .then(data => {
-            const modelSelect = $("model-select");
-            if (!modelSelect) return;
+        const modelSelect = $("model-select");
+
+        if (modelSelect) {
             modelSelect.innerHTML = "";
+
             (data.models || []).forEach(m => {
                 const opt = document.createElement("option");
                 opt.value = m;
                 opt.textContent = m;
                 modelSelect.appendChild(opt);
             });
-        });
+        }
+
+        fetch("/api/model-info")
+            .then(r => r.json())
+            .then(info => {
+
+                const active = $("active-model");
+                const list = $("available-models");
+
+                if (active) {
+                    active.textContent = info.model;
+                }
+
+                if (list) {
+                    list.innerHTML = "";
+
+                    (data.models || []).forEach(m => {
+
+                        if (m === info.model) return;
+                        if (m.startsWith("nomic-embed")) return;
+
+                        const li = document.createElement("li");
+                        li.textContent = m;
+                        list.appendChild(li);
+                    });
+                }
+            });
+
+    });
 
     fetch("/api/personalities")
         .then(r => r.json())

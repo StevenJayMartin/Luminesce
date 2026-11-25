@@ -135,26 +135,6 @@ async def set_model(req: dict):
         "model": state.current_model
     }
 
-@app.post("/api/set-model")
-async def set_model(req: dict):
-
-    new_model = req.get("model")
-
-    #- available = get_ollama_models()
-
-    if new_model not in available:
-        return {
-            "ok": False,
-            "error": f"{new_model} not installed"
-        }
-
-    state.current_model = new_model
-
-    return {
-        "ok": True,
-        "model": state.current_model
-    }
-
 
 @app.post("/api/set-personality")
 async def set_personality(req: dict):
@@ -205,13 +185,19 @@ async def tts(payload: dict = Body(...)):
             media_type="audio/wav"
         )
 
-    wav = tts_engine.synthesize(text)
+    try:
+        wav = tts_engine.synthesize(text)
+    except ValueError:
+        return Response(
+            content=b"",
+            media_type="audio/wav"
+        )
 
     return Response(
         content=wav,
         media_type="audio/wav"
     )
-
+    
 # ------------------------------------------------------------
 # WebSocket
 # ------------------------------------------------------------

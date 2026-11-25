@@ -1,13 +1,13 @@
 {
   "ollama": {
     "url": "http://192.168.1.205:11434",
-    "model": "llama3.2",
+    "model": "phi4-mini",
     "mode": "generate",
     "embedding_model": "nomic-embed-text"
   },
 
   "reasoning": {
-    "model": "llama3.2"
+    "model": "phi4-mini"
   },
 
   "personalities": {
@@ -19,7 +19,7 @@
   },
 
   "model_personality_map": {
-    "llama3.2": "developer",
+    "phi4-mini": "developer",
     "phi3:medium": "teacher",
     "qwen2.5:7b": "concise",
     "mistral:7b": "default"
@@ -77,7 +77,7 @@
     "web": {
       "theme": "dark",
       "animations": true,
-      "default_model": "llama3.2",
+      "default_model": "phi4-mini",
       "show_reasoning_panel": true
     }
   },
