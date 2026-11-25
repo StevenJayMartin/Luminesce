@@ -114,12 +114,17 @@ async def transcribe_audio(
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
+
 @app.post("/api/set-model")
 async def set_model(req: dict):
+
     new_model = req.get("model")
 
     if not new_model:
-        return {"ok": False, "error": "No model provided"}
+        return {
+            "ok": False,
+            "error": "No model provided"
+        }
 
     state.current_model = new_model
 
@@ -129,6 +134,27 @@ async def set_model(req: dict):
         "ok": True,
         "model": state.current_model
     }
+
+@app.post("/api/set-model")
+async def set_model(req: dict):
+
+    new_model = req.get("model")
+
+    #- available = get_ollama_models()
+
+    if new_model not in available:
+        return {
+            "ok": False,
+            "error": f"{new_model} not installed"
+        }
+
+    state.current_model = new_model
+
+    return {
+        "ok": True,
+        "model": state.current_model
+    }
+
 
 @app.post("/api/set-personality")
 async def set_personality(req: dict):

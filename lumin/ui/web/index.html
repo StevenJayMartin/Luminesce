@@ -115,9 +115,19 @@
     </main>
 
     <!-- RIGHT SIDEBAR -->
-    <aside class="w-80 bg-white border-l border-gray-300 p-4 overflow-y-auto">
 
-        <h2 class="text-xl font-bold mb-4">Assistant Brain</h2>
+    <aside id="brain-panel"
+       class="w-56 bg-white border-l border-gray-300 p-3 overflow-y-auto text-xs">
+ 
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="font-bold">
+                Assistant Brain
+            </h2>
+
+            <button onclick="toggleBrainPanel()">
+                🧠
+            </button>
+        </div>
 
         <details class="mb-4">
             <summary class="cursor-pointer font-semibold">Reasoning</summary>
@@ -236,6 +246,14 @@ function speakChatInput() {
     const text = document.getElementById("chat-input").value.trim();
     if (!text) return;
     window.speakText(text);
+}
+
+function toggleBrainPanel() {
+
+    const panel =
+        document.getElementById("brain-panel");
+
+    panel.classList.toggle("hidden");
 }
 
 </script>
