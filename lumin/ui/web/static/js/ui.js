@@ -32,7 +32,7 @@ window.renderAssistantMessage = function (text) {
         "flex justify-start mb-2 items-start gap-2";
 
     const bubble = document.createElement("div");
-    bubble.className = "bubble-assistant";
+    bubble.className = "bubble-assistant flex-1";
 
     bubble.dataset.raw = text;
     bubble.innerHTML = marked.parse(text);
@@ -79,7 +79,7 @@ window.renderAssistantStream = function (token) {
             "flex justify-start mb-2 items-start gap-2";
 
         const bubble = document.createElement("div");
-        bubble.className = "bubble-assistant";
+        bubble.className = "bubble-assistant flex-1";
 
         bubble.dataset.raw = token;
         bubble.innerHTML = marked.parse(token);

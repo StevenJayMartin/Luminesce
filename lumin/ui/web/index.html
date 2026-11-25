@@ -17,21 +17,130 @@
         .bubble-user {
             background: #2563eb;
             color: #ffffff;
-            padding: 0.5rem 1rem;
+
+            padding: 0.6rem 1rem;
             border-radius: 0.75rem;
-            max-width: 40rem;
+
+            max-width: 60rem;
+
             font-size: 0.95rem;
             white-space: pre-wrap;
         }
+
         .bubble-assistant {
             background: #e5e7eb;
             color: #111827;
-            padding: 0.5rem 1rem;
+
+            padding: 0.75rem 1rem;
             border-radius: 0.75rem;
-            max-width: 40rem;
+
+            width: 100%;
+
             font-size: 0.95rem;
-            white-space: pre-wrap;
+            line-height: 1.5;
+
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
+
+        /* Code blocks */
+
+        .bubble-assistant pre {
+            background: #1f1f1f;
+            color: #e5e7eb;
+
+            font-family:
+                "Cascadia Code",
+                "JetBrains Mono",
+                Consolas,
+                "Courier New",
+                monospace;
+
+            font-size: 14px;
+            line-height: 1.35;
+
+            padding: 10px 14px;
+            border-radius: 8px;
+
+            overflow-x: auto;
+
+            margin: 0.5rem 0;
+        }
+
+        .bubble-assistant code {
+            font-family:
+                "Cascadia Code",
+                "JetBrains Mono",
+                Consolas,
+                "Courier New",
+                monospace;
+        }
+
+        /* Headers */
+
+        .bubble-assistant h1,
+        .bubble-assistant h2,
+        .bubble-assistant h3 {
+            font-weight: 700;
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .bubble-assistant h1 {
+            font-size: 1.25rem;
+        }
+
+        .bubble-assistant h2 {
+            font-size: 1.1rem;
+        }
+
+        .bubble-assistant h3 {
+            font-size: 1rem;
+        }
+
+        /* Lists */
+
+        .bubble-assistant ul,
+        .bubble-assistant ol {
+            margin-left: 1.5rem;
+            margin-top: 0.25rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .bubble-assistant li {
+            margin-bottom: 0.15rem;
+        }
+
+        /* Tables */
+
+        .bubble-assistant table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 0.5rem 0;
+        }
+
+        .bubble-assistant th,
+        .bubble-assistant td {
+            border: 1px solid #cbd5e1;
+            padding: 6px 8px;
+            text-align: left;
+        }
+
+        .bubble-assistant th {
+            background: #f3f4f6;
+        }
+
+        /* Blockquotes */
+
+        .bubble-assistant blockquote {
+            border-left: 4px solid #60a5fa;
+            padding-left: 12px;
+            margin: 0.5rem 0;
+            color: #4b5563;
+        }
+
+        /* Hide Scrollbars */
+
         .scrollbar-hide::-webkit-scrollbar {
             display: none;
         }
@@ -42,7 +151,7 @@
 <div class="h-full flex">
 
     <!-- LEFT SIDEBAR -->
-    <aside class="w-64 bg-white border-r border-gray-300 p-4 flex flex-col gap-6">
+    <aside class="w-56 bg-white border-r border-gray-300 p-4 flex flex-col gap-6">
         <h1 class="text-2xl font-bold">Luminesce</h1>
 
         <div>
@@ -117,7 +226,7 @@
     <!-- RIGHT SIDEBAR -->
 
     <aside id="brain-panel"
-       class="w-56 bg-white border-l border-gray-300 p-3 overflow-y-auto text-xs">
+       class="w-40 bg-white border-l border-gray-300 p-3 overflow-y-auto text-xs">
  
         <div class="flex justify-between items-center mb-4">
             <h2 class="font-bold">
