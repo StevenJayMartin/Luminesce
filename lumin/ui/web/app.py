@@ -1,7 +1,6 @@
 import os
 from fastapi import FastAPI, WebSocket
 from fastapi import UploadFile, File
-from faster_whisper import WhisperModel
 import tempfile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -15,6 +14,7 @@ from lumin.ui.web.core.ws_chat import chat_ws
 from lumin.ui.web.routes.system import router as system_router
 from lumin.ui.web.routes import system as system_deps
 from lumin.voice.tts_onnx import OnnxTTS
+from lumin.ui.web.core.stt import SpeechToText
 
 import lumin.ui.web.models.state as state
 
@@ -37,6 +37,11 @@ semantic_memory = LuminSemanticMemory(
     embedding_model=config["ollama"].get("embedding_model", config["ollama"]["model"]),
 )
 
+stt = SpeechToText(
+    "lumin/models/vosk-model-small-en-us-0.15"
+)
+
+
 # ------------------------------------------------------------
 # FastAPI app
 # ------------------------------------------------------------
@@ -47,12 +52,6 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
-)
-
-whisper_model = WhisperModel(
-    "base",
-    device="cpu",
-    compute_type="int8"
 )
 
 tts_engine = OnnxTTS("lumin/models/onnx")
@@ -93,16 +92,7 @@ async def transcribe_audio(
 
     try:
 
-        segments, info = whisper_model.transcribe(
-            temp_path,
-            beam_size=5
-        )
-
-        text = " ".join(
-            segment.text
-            for segment in segments
-        ).strip()
-
+        text = stt.transcribe(temp_path)
 
         return {
             "success": True,

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Speech Lab</title>
+</head>
+<body>
+
+<h2>Speech Lab</h2>
+
+<button id="recordBtn">
+    🎤 Start Recording
+</button>
+
+<p id="status">
+    Idle
+</p>
+
+<textarea
+    id="transcript"
+    rows="8"
+    cols="80">
+</textarea>
+
+<script>
+
+let recorder;
+let chunks = [];
+
+const btn = document.getElementById("recordBtn");
+
+btn.onclick = async () => {
+
+    if (!recorder) {
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert("Microphone API not available.");
+            return;
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true
+        });
+
+        recorder =
+            new MediaRecorder(stream);
+
+        recorder.ondataavailable = e => {
+            chunks.push(e.data);
+        };
+
+        recorder.onstop = async () => {
+
+            const blob =
+                new Blob(chunks, {
+                    type: "audio/webm"
+                });
+
+            chunks = [];
+
+            const form =
+                new FormData();
+
+            form.append(
+                "audio",
+                blob,
+                "recording.wav"
+            );
+
+            document.getElementById(
+                "status"
+            ).innerText =
+                "Transcribing...";
+
+            const response =
+                await fetch(
+                    "/transcribe",
+                    {
+                        method: "POST",
+                        body: form
+                    }
+                );
+
+            const result =
+                await response.json();
+
+            document.getElementById(
+                "transcript"
+            ).value =
+                result.transcript;
+
+            document.getElementById(
+                "status"
+            ).innerText =
+                "Done";
+        };
+
+        recorder.start();
+
+        btn.textContent =
+            "⏹ Stop Recording";
+
+        document.getElementById(
+            "status"
+        ).innerText =
+            "Recording";
+
+    } else {
+
+        recorder.stop();
+        recorder = null;
+
+        btn.textContent =
+            "🎤 Start Recording";
+    }
+};
+
+</script>
+
+</body>
+</html>

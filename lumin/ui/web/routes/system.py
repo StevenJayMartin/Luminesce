@@ -1,5 +1,6 @@
 import requests
 from fastapi import APIRouter, Depends
+from fastapi import UploadFile, File
 
 router = APIRouter()
 
@@ -10,6 +11,9 @@ def get_config(config=Depends(lambda: None)):
 
 def get_memory_engine(semantic_memory=Depends(lambda: None)):
     return semantic_memory
+
+def get_stt(stt=Depends(lambda: None)):
+    return stt
 
 # ------------------------------------------------------------
 # /api/models
@@ -94,3 +98,19 @@ def get_memory(
     semantic_memory = Depends(get_memory_engine)
 ):
     return {"memory": semantic_memory.mem.get(session_id, [])}
+
+# ------------------------------------------------------------
+# /api/transcribe STT
+# ------------------------------------------------------------
+@router.post("/api/transcribe")
+async def transcribe_audio(
+    audio: UploadFile = File(...),
+    stt = Depends(get_stt)
+):
+    text = stt.transcribe(
+        await audio.read()
+    )
+
+    return {
+        "transcript": text
+    }
